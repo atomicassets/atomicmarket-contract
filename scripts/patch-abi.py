@@ -3,29 +3,32 @@
 
 Background
 ----------
-The AtomicAssets contract deployed on WAX mainnet was compiled with an older CDT.
-Modern CDT (4.1.x) changed two -abigen spellings in wire-compatible but
-tool-visible ways. ABI field/type *names* are how external tools (atomicassets-js,
-wallets, the ECA indexer, cleos JSON) pack/unpack data, so each change breaks
-existing integrations even though the compiled wasm and the binary wire format are
-identical. This script restores the deployed spellings; the wasm is untouched.
+The AtomicMarket contract deployed on WAX mainnet (like the AtomicAssets contract
+it builds on) was compiled with an older CDT. Modern CDT (4.1.x) changed two
+-abigen spellings in wire-compatible but tool-visible ways. ABI field/type *names*
+are how external tools (atomicmarket-js, wallets, the ECA indexer, cleos JSON)
+pack/unpack data, so each change breaks existing integrations even though the
+compiled wasm and the binary wire format are identical. This script restores the
+deployed spellings; the wasm is untouched.
 
 Two regressions are reverted:
 
 1. std::pair fields  `first`/`second`  ->  `key`/`value`
-   (only the `ATTRIBUTE_MAP` element type `pair_string_ATOMIC_ATTRIBUTE` today).
-   Old CDT named pair fields key/value; CDT 4.1 hardcodes the C++ member names.
+   (the `ATTRIBUTE_MAP` element type `pair_string_ATOMIC_ATTRIBUTE`, pulled in via
+   atomicdata.hpp). Old CDT named pair fields key/value; CDT 4.1 hardcodes the C++
+   member names.
 
 2. std::vector<uint8_t>  `bytes`  ->  `uint8[]`
    Old CDT spelled vector<uint8_t> as `uint8[]` and vector<int8_t> as `bytes`;
-   CDT 4.1 collapses BOTH to `bytes`. The deployed ABI keeps `bytes` only for the
+   CDT 4.1 collapses BOTH to `bytes`. The legacy ABIs keep `bytes` only for the
    `INT8_VEC` alias (vector<int8_t>), so we convert every `bytes` EXCEPT that one.
 
-Verified against https://wax.greymass.com get_abi(atomicassets): after patching,
-the rc ABI's shared surface (pre-v2 types/structs/actions/tables) is byte-for-byte
-equivalent to on-chain; the only remaining differences are additive v2 features.
+(The spelling rules were originally verified byte-for-byte against the deployed
+atomicassets ABI via https://wax.greymass.com get_abi; the same legacy-CDT
+spellings apply to the deployed atomicmarket ABI, which shares these types
+through atomicdata / the atomicassets interface.)
 
-Idempotent. Usage: patch-abi.py [path/to/contract.abi]  (default build/atomicassets.abi)
+Idempotent. Usage: patch-abi.py [path/to/contract.abi]  (default build/atomicmarket.abi)
 """
 import json
 import sys

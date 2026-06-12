@@ -1,16 +1,10 @@
+# Native-CDT build of the AtomicMarket contract (CI installs the pinned CDT 4.1.1
+# natively). For local builds without a native CDT install, use `bash build.sh`
+# instead - it runs the same pinned compiler inside the antelope-cdt docker image
+# and produces identical artifacts.
 build:
 	mkdir -p build
-	cdt-cpp -abigen -contract=atomicmarket -I./include src/atomicmarket.cpp -o build/atomicmarket.wasm
-	$(MAKE) build-test-consumer
-
-# Test-only fixture: a minimal EXTERNAL contract that reads atomicassets tables
-# through include/atomicassets-interface.hpp. Catches header regressions the
-# main suite cannot see (atomicassets itself never includes that header) — e.g.
-# the get_self()-vs-ATOMICASSETS_ACCOUNT anchoring bug fixed in PR #21. Consumed
-# by the "Interface Header" VeRT tests; NOT a release artifact.
-build-test-consumer:
-	mkdir -p build
-	cdt-cpp -abigen -contract=ifaceconsumr -I./include tests/fixtures/interface-consumer/interface-consumer.cpp -o build/interface-consumer.wasm
+	cdt-cpp -abigen -contract=atomicmarket -I./include -R./resource src/atomicmarket.cpp -o build/atomicmarket.wasm
 
 # Release-only ABI normalization. CDT 4.1 changed two -abigen spellings
 # (pair fields first/second; vector<uint8_t> as `bytes`) that break existing
@@ -23,7 +17,7 @@ patch-abi:
 # Build the distributable artifacts (wasm + legacy-compatible abi) for release /
 # `cleos set contract`. Do NOT use for running tests — use `make build`.
 # Sequence build -> patch-abi via sub-makes so `make -j release` cannot start
-# patch-abi before build has produced build/atomicassets.abi.
+# patch-abi before build has produced build/atomicmarket.abi.
 release:
 	$(MAKE) build
 	$(MAKE) patch-abi
@@ -33,6 +27,6 @@ export-memory:
 	wat2wasm -o build/atomicmarket.wasm atomicmarket.wat
 	rm atomicmarket.wat
 
-.PHONY: build build-test-consumer patch-abi release export-memory clean
+.PHONY: build patch-abi release export-memory clean
 clean:
 	-rm -rf build

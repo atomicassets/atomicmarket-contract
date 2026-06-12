@@ -1,7 +1,7 @@
 {
-  "name": "contract",
-  "version": "1.0.0",
-  "description": "Testing contract smart contract with @vaulta/vert",
+  "name": "atomicmarket-contract",
+  "version": "2.0.0",
+  "description": "AtomicMarket V2.0 smart contract - VeRT (@vaulta/vert) test suite",
   "main": "",
   "scripts": {
     "test": "jest",
@@ -16,5 +16,5 @@
   },
   "keywords": [],
   "author": "",
-  "license": ""
+  "license": "MIT"
 }
