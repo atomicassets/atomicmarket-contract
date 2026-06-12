@@ -1,7 +1,9 @@
 # AtomicMarket V2.0
 AtomicMarket is a marketplace to sell, auction and rent out [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs. V2.0 builds on the AtomicAssets V2.0 contract.
 
-### [Documentation can be found here.](https://github.com/pinknetworkx/atomicmarket-contract/wiki)
+### [Documentation can be found here.](docs/wiki/Home.md)
+
+(V1 documentation for the upstream contract: [pinknetworkx wiki](https://github.com/pinknetworkx/atomicmarket-contract/wiki))
 
 ## Useful links
 - API: https://github.com/pinknetworkx/eosio-contract-api
