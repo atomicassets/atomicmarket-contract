@@ -19,7 +19,7 @@ purchased in one transaction — covers the same use cases cleanly.
 | `purchasesale` on a bundle sale | No purchase; the sale is cancelled, the buyer is charged nothing |
 | `auctionbid` on an unclaimed bundle auction | No bid; the auction is dissolved — existing bid refunded, custodied assets returned to the seller |
 | `auctclaimbuy` / `auctclaimsel` on an ended, fully unclaimed bundle auction | Dissolved — winning bid refunded, assets returned to the seller |
-| `auctclaim*` on a **partially claimed** bundle auction | Completes normally (one side was already served; dissolving would pay one party twice) |
+| `auctclaim*` on a **partially claimed** bundle auction | Completes (one side was already served; dissolving would pay one party twice). On the seller claim, the collection fee goes to the collection author in full — bundles never touch the royalty split engine |
 | `acceptbuyo` on a bundle buyoffer | No trade; the buyoffer is cancelled, the escrowed price returned to the buyer |
 | `cancelsale` / `cancelauct` on a bundle | Allowed for **anyone** (bundles count as invalid listings); bundle auctions with bids refund the bidder |
 | Activating a bundle (offer memo `sale` / transfer memo `auction` with multiple assets) | Rejected with a pointer to the cancel actions |

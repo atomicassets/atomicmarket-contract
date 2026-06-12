@@ -612,6 +612,53 @@ describe('atomicmarket end to end', () => {
         expect(balanceOf('renter')).toEqual([WAX(2)]); // bid was never taken
     });
 
+    test('partially-claimed legacy bundle auction: seller claim pays the author in full, bypassing splits', async () => {
+        // a pre-V2 bundle auction whose BUYER already claimed the assets - the seller's
+        // claim must still pay out, with the collection cut going to the author in full
+        // (bundles never touch the royalty split engine), even when a config exists
+        await setupRoyaltySplits();
+
+        atomicmarket.tables.auctions(nameToBigInt(atomicmarket.name)).set(1n, atomicmarket.name, {
+            auction_id: 1,
+            seller: 'seller',
+            asset_ids: [ASSET1, ASSET2],
+            end_time: 1, // long over
+            assets_transferred: true,
+            current_bid: WAX(1),
+            current_bidder: 'buyer',
+            claimed_by_seller: false,
+            claimed_by_buyer: true,
+            maker_marketplace: '',
+            taker_marketplace: '',
+            collection_name: COL,
+            collection_fee: 0.1,
+        });
+
+        // the escrowed winning bid sits in the contract's token balance
+        await token.actions.transfer(['buyer', MARKET, WAX(1), 'deposit']).send('buyer@active');
+
+        // move past end_time (the vert chain clock starts at epoch 0)
+        blockchain.addTime(TimePoint.fromMilliseconds(3600 * 1000));
+
+        await atomicmarket.actions.auctclaimsel([1]).send('seller@active');
+
+        // author got the WHOLE 10% cut; none of the royalty recipients got anything
+        expect(balanceOf('author')).toEqual([WAX(0.1)]);
+        expect(balanceOf('founder1')).toBeNull();
+        expect(balanceOf('founder2')).toBeNull();
+        expect(balanceOf('temproy1')).toBeNull();
+        expect(balanceOf('attrroy1')).toBeNull();
+
+        // no royalty logs were emitted for the bundle payout
+        const logNames = blockchain.executionTraces.map((t) => t.action.toString());
+        expect(logNames.some((n) => n.startsWith('logroy'))).toBe(false);
+
+        // seller received 88% directly, auction row gone
+        const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
+        expect(sellerTokens).toEqual([{ balance: WAX(0.88) }]);
+        expect(marketTables.auctions()).toEqual([]);
+    });
+
     test('accepting a legacy bundle buyoffer refunds the buyer instead', async () => {
         atomicmarket.tables.buyoffers(nameToBigInt(atomicmarket.name)).set(1n, atomicmarket.name, {
             buyoffer_id: 1,

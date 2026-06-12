@@ -473,6 +473,8 @@ The seller of the auction with the ID {{auction_id}} claims the final bid of the
 The marketplaces facilitating the auction creation and the final bid, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the seller each get their share of the final bid added to their balances. If the collection fee at the time of this claim is lower than it was when the auction was created, the lower fee is applied.
 
 If the auction is a legacy bundle listing (more than one asset) and the winning bidder has not claimed yet, the auction is dissolved instead: the winning bid is refunded to the bidder's balance and the assets are returned to the seller.
+
+If the auction is a legacy bundle listing and the winning bidder has already claimed the assets, the seller is paid out, with the collection fee share going to the collection author in full (legacy bundles are not distributed through the royalty split configuration).
 </div>
 
 <b>Clauses:</b>

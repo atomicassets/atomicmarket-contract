@@ -1263,7 +1263,9 @@ ACTION atomicmarket::auctclaimsel(
         // nobody has claimed yet: it is dissolved instead - the winning bid is refunded
         // and the assets are returned to the seller.
         // If the buyer HAS already claimed the assets (pre-removal), the seller must still
-        // be paid - the normal payout below handles that (it supports multiple assets)
+        // be paid - the payout below handles that. Bundles never touch the royalty split
+        // engine: internal_payout_sale credits the collection cut of multi-asset payouts
+        // to the collection author in full
         internal_add_balance(auction_itr->current_bidder, auction_itr->current_bid);
         internal_transfer_assets(
             auction_itr->seller,
@@ -2914,7 +2916,15 @@ void atomicmarket::internal_payout_sale(
     double effective_collection_fee = std::min(collection_fee, collection_info.market_fee);
 
     asset collection_cut = asset((uint64_t)(effective_collection_fee * (double) quantity.amount), quantity.symbol);
-    distribute_collection_fee(collection_name, collection_info.author, collection_cut, asset_ids, asset_scope);
+    if (asset_ids.size() > 1) {
+        // Only reachable for pre-V2 bundle listings draining out through the partially
+        // claimed auction path (auctclaimsel after the buyer already claimed). Bundles
+        // never touch the royalty split engine - the author receives the cut in full
+        // and no royalty log actions are emitted
+        internal_add_balance(collection_info.author, collection_cut);
+    } else {
+        distribute_collection_fee(collection_name, collection_info.author, collection_cut, asset_ids, asset_scope);
+    }
     seller_cut_quantity -= collection_cut;
 
     // Bonus fees
@@ -2956,8 +2966,12 @@ void atomicmarket::internal_payout_sale(
 /**
 * Distributes a collection's share of a payout
 *
+* Only single-asset payouts reach this function (enforced by the check below) - bundle
+* payouts from legacy listings are routed to the collection author by internal_payout_sale
+* and never touch the split engine.
+*
 * If the collection has no royalty split config, the full amount goes to the collection author
-* (the previous behavior). Otherwise the amount is split per asset, and each asset's share is
+* (the previous behavior). Otherwise the asset's share is
 * divided between the founders, template and attribute categories according to the config's
 * split weights. Categories without payees for an asset are renormalized away. Within the
 * attributes category, the share is first split across the matched rules proportional to the
