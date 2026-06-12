@@ -1,16 +1,15 @@
 #include <atomicmarket.hpp>
 
-#include <math.h>
-
-
 /**
 * Initializes the config table. Only needs to be called once when first deploying the contract
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::init() {
     require_auth(get_self());
-    config.get_or_create(get_self(), config_s{});
+    get_config().get_or_create(get_self(), config_s{});
+
+    auto marketplaces = get_marketplaces();
 
     if (marketplaces.find(name("").value) == marketplaces.end()) {
         marketplaces.emplace(get_self(), [&](auto &_marketplace) {
@@ -24,16 +23,19 @@ ACTION atomicmarket::init() {
 /**
 * Converts the now deprecated sale and auction counters in the config singleton
 * into using the counters table
-* 
+*
 * Calling this only is necessary when upgrading the contract from a lower version to 1.2.0
 * When deploying a fresh contract, this action can be ignored completely
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::convcounters() {
     require_auth(get_self());
 
+    auto config = get_config();
     config_s current_config = config.get();
+
+    auto counters = get_counters();
 
     check(current_config.sale_counter != 0 && current_config.auction_counter != 0,
         "The sale or auction counters have already been converted");
@@ -56,13 +58,14 @@ ACTION atomicmarket::convcounters() {
 
 /**
 * Sets the minimum bid increase compared to the previous bid
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::setminbidinc(double minimum_bid_increase) {
     require_auth(get_self());
     check(minimum_bid_increase > 0, "The bid increase must be greater than 0");
 
+    auto config = get_config();
     config_s current_config = config.get();
     current_config.minimum_bid_increase = minimum_bid_increase;
     config.set(current_config, get_self());
@@ -71,13 +74,15 @@ ACTION atomicmarket::setminbidinc(double minimum_bid_increase) {
 
 /**
 * Sets the version for the config table
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::setversion(string new_version) {
     require_auth(get_self());
 
+    auto config = get_config();
     config_s current_config = config.get();
+
     current_config.version = new_version;
 
     config.set(current_config, get_self());
@@ -86,7 +91,7 @@ ACTION atomicmarket::setversion(string new_version) {
 
 /**
 * Adds a token that can be used to sell assets for
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::addconftoken(name token_contract, symbol token_symbol) {
@@ -95,7 +100,7 @@ ACTION atomicmarket::addconftoken(name token_contract, symbol token_symbol) {
     check(!is_symbol_supported(token_symbol),
         "A token with this symbol is already supported");
 
-
+    auto config = get_config();
     config_s current_config = config.get();
 
     current_config.supported_tokens.push_back({
@@ -109,7 +114,7 @@ ACTION atomicmarket::addconftoken(name token_contract, symbol token_symbol) {
 
 /**
 * Adds a stable pair that can be used for stable sales
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::adddelphi(
@@ -126,7 +131,9 @@ ACTION atomicmarket::adddelphi(
     check(listing_symbol != settlement_symbol,
         "Listing symbol and settlement symbol must be different");
 
-    auto pair_itr = delphioracle::pairs.require_find(delphi_pair_name.value,
+    auto pairs = delphioracle::get_pairs();
+
+    auto pair_itr = pairs.require_find(delphi_pair_name.value,
         "The provided delphi_pair_name does not exist in the delphi oracle contract");
     if (!invert_delphi_pair) {
         check(listing_symbol.precision() == pair_itr->quote_symbol.precision(),
@@ -145,7 +152,7 @@ ACTION atomicmarket::adddelphi(
 
     check(is_symbol_supported(settlement_symbol), "The settlement symbol does not belong to a supported token");
 
-
+    auto config = get_config();
     config_s current_config = config.get();
 
     current_config.supported_symbol_pairs.push_back({
@@ -161,7 +168,7 @@ ACTION atomicmarket::adddelphi(
 
 /**
 * Sets the maker and taker market fee
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::setmarketfee(double maker_market_fee, double taker_market_fee) {
@@ -170,6 +177,7 @@ ACTION atomicmarket::setmarketfee(double maker_market_fee, double taker_market_f
     check(maker_market_fee >= 0 && taker_market_fee >= 0,
         "Market fees need to be at least 0");
 
+    auto config = get_config();
     config_s current_config = config.get();
 
     current_config.maker_market_fee = maker_market_fee;
@@ -182,7 +190,7 @@ ACTION atomicmarket::setmarketfee(double maker_market_fee, double taker_market_f
 /**
 * Adds an bonus fee to be paid for payouts of listings created in the future
 * with a counter name that is within the applicable counter names
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::addbonusfee(
@@ -202,6 +210,8 @@ ACTION atomicmarket::addbonusfee(
 
     vector <COUNTER_RANGE> counter_ranges = {};
 
+    auto counters = get_counters();
+
     for (name counter_name : applicable_counter_names) {
         auto counter_itr = counters.find(counter_name.value);
         counter_ranges.push_back({
@@ -210,6 +220,8 @@ ACTION atomicmarket::addbonusfee(
             .end_id = ULLONG_MAX
         });
     }
+
+    auto bonusfees = get_bonusfees();
 
     bonusfees.emplace(get_self(), [&](auto &_bonusfee) {
         _bonusfee.bonusfee_id = consume_counter(name("bonusfee"));
@@ -224,7 +236,7 @@ ACTION atomicmarket::addbonusfee(
 /**
 * Adds an additional counter name to be added to an existing bonus fee
 * This will lead to the fee being applied to all future listings using the counter name
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::addafeectr(
@@ -233,12 +245,15 @@ ACTION atomicmarket::addafeectr(
 ) {
     require_auth(get_self());
 
+    auto counters = get_counters();
+    auto bonusfees = get_bonusfees();
+
     auto bonusfee_itr = bonusfees.require_find(bonusfee_id,
         "No bonus fee with this id exists");
-    
+
     check(bonusfee_itr->counter_ranges[0].end_id != ULLONG_MAX,
         "Can't add a counter name to an bonus fee that is already stopped");
-    
+
     auto counter_range_itr = std::find_if(
         bonusfee_itr->counter_ranges.begin(),
         bonusfee_itr->counter_ranges.end(),
@@ -249,7 +264,7 @@ ACTION atomicmarket::addafeectr(
 
     check(counter_range_itr == bonusfee_itr->counter_ranges.end(),
         "This counter name is already added to the bonus fee");
-    
+
 
     vector <COUNTER_RANGE> counter_ranges = bonusfee_itr->counter_ranges;
 
@@ -268,7 +283,7 @@ ACTION atomicmarket::addafeectr(
 
 /**
 * Stops an bonus fee so that it is no longer paid by any listings created in the future
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::stopbonusfee(
@@ -276,9 +291,11 @@ ACTION atomicmarket::stopbonusfee(
 ) {
     require_auth(get_self());
 
+    auto bonusfees = get_bonusfees();
+
     auto bonusfee_itr = bonusfees.require_find(bonusfee_id,
         "No bonus fee with this id exists");
-    
+
     vector <COUNTER_RANGE> counter_ranges = bonusfee_itr->counter_ranges;
 
     for (COUNTER_RANGE &counter_range : counter_ranges) {
@@ -295,7 +312,7 @@ ACTION atomicmarket::stopbonusfee(
 /**
 * Erases an bonus fee entirely, so that it is not paid by any listing, including past ones that have
 * originally been created with this fee
-* 
+*
 * @required_auth The contract itself
 */
 ACTION atomicmarket::delbonusfee(
@@ -303,6 +320,7 @@ ACTION atomicmarket::delbonusfee(
 ) {
     require_auth(get_self());
 
+    auto bonusfees = get_bonusfees();
     auto bonusfee_itr = bonusfees.require_find(bonusfee_id,
         "No bonus fee with this id exists");
 
@@ -313,13 +331,13 @@ ACTION atomicmarket::delbonusfee(
 
 /**
 * Registers a marketplace that can then be used in the maker_marketplace / taker_marketplace parameters
-* 
+*
 * This is needed because without the registration process, an attacker could create tiny sales with random accounts
 * as the marketplace, for which the atomicmarket contract would then create balance table rows and pay the RAM for.
-* 
+*
 * marketplace names that belong to existing accounts can not be chosen,
 * except if that account authorizes the transaction
-* 
+*
 * @required_auth creator
 */
 ACTION atomicmarket::regmarket(
@@ -328,6 +346,7 @@ ACTION atomicmarket::regmarket(
 ) {
     require_auth(creator);
 
+    auto marketplaces = get_marketplaces();
     name marketplace_name_suffix = marketplace_name.suffix();
 
     if (is_account(marketplace_name)) {
@@ -346,7 +365,6 @@ ACTION atomicmarket::regmarket(
     check(marketplaces.find(marketplace_name.value) == marketplaces.end(),
         "A marketplace with this name already exists");
 
-
     marketplaces.emplace(creator, [&](auto &_marketplace) {
         _marketplace.marketplace_name = marketplace_name;
         _marketplace.creator = creator;
@@ -356,7 +374,7 @@ ACTION atomicmarket::regmarket(
 
 /**
 * Withdraws a token from a users balance. The specified token is then transferred to the user.
-* 
+*
 * @required_auth owner
 */
 ACTION atomicmarket::withdraw(
@@ -375,7 +393,7 @@ ACTION atomicmarket::withdraw(
 * Create a sale listing
 * For the sale to become active, the seller needs to create an atomicassets offer from them to the atomicmarket
 * account, offering (only) the assets to be sold with the memo "sale"
-* 
+*
 * @required_auth seller
 */
 ACTION atomicmarket::announcesale(
@@ -392,9 +410,9 @@ ACTION atomicmarket::announcesale(
 
     name assets_collection_name = get_collection_and_check_assets(seller, asset_ids);
 
-
     checksum256 asset_ids_hash = hash_asset_ids(asset_ids);
 
+    auto sales = get_sales();
     auto sales_by_hash = sales.get_index <name("assetidshash")>();
     auto sale_itr = sales_by_hash.find(asset_ids_hash);
 
@@ -461,10 +479,10 @@ ACTION atomicmarket::announcesale(
 
 /**
 * Cancels a sale. The sale can both be active or inactive
-* 
+*
 * If the sale is invalid (offer for the sale was cancelled or the seller does not own at least one
 * of the assets on sale, this action can be called without the authorization of the seller
-* 
+*
 * @required_auth The sale's seller
 */
 ACTION atomicmarket::cancelsale(
@@ -515,9 +533,9 @@ ACTION atomicmarket::cancelsale(
 /**
 * Purchases an asset that is for sale.
 * The sale price is deducted from the buyer's balance and added to the seller's balance
-* 
+*
 * intended_delphi_median is only relevant if the sale uses a delphi pairing. Otherwise it is not checked.
-* 
+*
 * @required_auth buyer
 */
 ACTION atomicmarket::purchasesale(
@@ -628,10 +646,10 @@ ACTION atomicmarket::purchasesale(
 /**
 * Checks whether the provided asset ids, listing price and settlement symbol match the values of
 * the sale with the specified id and throws the transaction if this is not the case
-* 
+*
 * Meant to be called within the same transaction as the purchase action for this sale in order to
 * validate that the sale with the specified id contains what the purchaser expects it to contain
-* 
+*
 * @required_auth None
 */
 ACTION atomicmarket::assertsale(
@@ -645,13 +663,13 @@ ACTION atomicmarket::assertsale(
 
     auto sale_itr = sales.require_find(sale_id,
         "No sale with this sale_id exists");
-    
+
     check(std::is_permutation(asset_ids_to_assert.begin(), asset_ids_to_assert.end(), sale_itr->asset_ids.begin()),
         "The asset ids to assert differ from the asset ids of this sale");
-    
+
     check(listing_price_to_assert == sale_itr->listing_price,
         "The listing price to assert differs from the listing price of this sale");
-    
+
     check(settlement_symbol_to_assert == sale_itr->settlement_symbol,
         "The settlement symbol to assert differs from the settlement symbol of this sale");
 }
@@ -661,9 +679,9 @@ ACTION atomicmarket::assertsale(
 * Create an auction listing
 * For the auction to become active, the seller needs to use the atomicassets transfer action to transfer the assets
 * to the atomicmarket contract with the memo "auction"
-* 
+*
 * duration is in seconds
-* 
+*
 * @required_auth seller
 */
 ACTION atomicmarket::announceauct(
@@ -753,10 +771,10 @@ ACTION atomicmarket::announceauct(
 /**
 * Cancels an auction. If the auction is active, it must not have any bids yet.
 * Auctions with bids can't be cancelled.
-* 
+*
 * If the auction is invalid (it is not active yet and the seller does not own at least one of the
 * assets listed in the auction) this action can be called without the autorization of the seller
-* 
+*
 * @required_auth seller
 */
 ACTION atomicmarket::cancelauct(
@@ -801,7 +819,7 @@ ACTION atomicmarket::cancelauct(
 * Places a bid on an auction
 * The bid is deducted from the buyer's balance
 * If a higher bid gets placed by someone else, the original bid will be refunded to the original buyer's balance
-* 
+*
 * @required_auth bidder
 */
 ACTION atomicmarket::auctionbid(
@@ -867,7 +885,7 @@ ACTION atomicmarket::auctionbid(
 
 /**
 * Claims the asset for the highest bidder of an auction
-* 
+*
 * @required_auth The highest bidder of the auction
 */
 ACTION atomicmarket::auctclaimbuy(
@@ -885,7 +903,7 @@ ACTION atomicmarket::auctclaimbuy(
 
     check(auction_itr->end_time < current_time_point().sec_since_epoch(),
         "The auction is not finished yet");
-    
+
     check(!auction_itr->claimed_by_buyer,
         "The auction has already been claimed by the buyer");
 
@@ -907,9 +925,9 @@ ACTION atomicmarket::auctclaimbuy(
 
 /**
 * Claims the highest bid of an auction for the seller and also gives a cut to the marketplaces and the collection
-* 
+*
 * If the auction has no bids, use the cancelauct action instead
-* 
+*
 * @required_auth The auction's seller
 */
 ACTION atomicmarket::auctclaimsel(
@@ -927,7 +945,7 @@ ACTION atomicmarket::auctclaimsel(
 
     check(auction_itr->current_bidder != name(""),
         "The auction does not have any bids");
-    
+
     check(!auction_itr->claimed_by_seller,
         "The auction has already been claimed by the seller");
 
@@ -956,10 +974,10 @@ ACTION atomicmarket::auctclaimsel(
 /**
 * Checks whether the provided asset ids match those of the auction with the specified id
 * and throws the transaction if this is not the case
-* 
+*
 * Meant to be called within the same transaction as a bid action for this auction in order to
 * validate that the auction with the specified id contains what the bidder expects it to contain
-* 
+*
 * @required_auth None
 */
 ACTION atomicmarket::assertauct(
@@ -968,7 +986,7 @@ ACTION atomicmarket::assertauct(
 ) {
     auto auction_itr = auctions.require_find(auction_id,
         "No auction with this auction_id exists");
-    
+
     check(std::is_permutation(asset_ids_to_assert.begin(), asset_ids_to_assert.end(), auction_itr->asset_ids.begin()),
         "The asset ids to assert differ from the asset ids of this auction");
 }
@@ -978,7 +996,7 @@ ACTION atomicmarket::assertauct(
 * Creates a buyoffer
 * The specified price is deducted from the buyer's balance
 * The recipient then has the option to trade the specified assets for the offered price (excluding fees)
-* 
+*
 * @required_auth buyer
 */
 ACTION atomicmarket::createbuyo(
@@ -1047,7 +1065,7 @@ ACTION atomicmarket::createbuyo(
 * Cancels (erases) a buyoffer
 * The price that has previously been deducted when creating the buyoffer is added
 * back to the buyer's balance
-* 
+*
 * @required_auth The buyer of the buyoffer
 */
 ACTION atomicmarket::cancelbuyo(
@@ -1055,7 +1073,7 @@ ACTION atomicmarket::cancelbuyo(
 ) {
     auto buyoffer_itr = buyoffers.require_find(buyoffer_id,
         "No buyoffer with this id exists");
-    
+
     require_auth(buyoffer_itr->buyer);
 
     internal_add_balance(buyoffer_itr->buyer, buyoffer_itr->price);
@@ -1069,16 +1087,16 @@ ACTION atomicmarket::cancelbuyo(
 * Calling this action expects that the recipient of the buyoffer had created an AtomicAssets
 * trade offer, which offers the assets of the buyoffer to the AtomicMarket contract, while
 * asking for nothing in return and using the memo "buyoffer"
-* 
+*
 * The AtomicAssets offer with the highest offer_id is looked at, which means that the recipient
 * should create the AtomicAssets offer and then call this action within the same transaction to
 * make sure that they are executed directly after one antoher
-* 
+*
 * The AtomicMarket will then accept this trade offer and transfer the assets to the sender of
 * the buyoffer, and pay out the offered price to the recipient
-* 
+*
 * The price is subject to the same fees as sales or auctions
-* 
+*
 * @required_auth The recipient of the buyoffer
 */
 ACTION atomicmarket::acceptbuyo(
@@ -1091,7 +1109,7 @@ ACTION atomicmarket::acceptbuyo(
 
     auto buyoffer_itr = buyoffers.require_find(buyoffer_id,
         "No buyoffer with this id exists");
-    
+
     require_auth(buyoffer_itr->recipient);
 
     check(std::is_permutation(
@@ -1102,14 +1120,14 @@ ACTION atomicmarket::acceptbuyo(
         "The asset ids of this buyoffer differ from the expected asset ids");
     check(buyoffer_itr->price == expected_price,
         "The price of this buyoffer differ from the expected price");
-    
+
     // This could theoretically fail if there is not a single AtomicAssets offer exists
     // Because it is assumed that this will rarely if ever be the case, no explicit check is added for that
     auto last_offer_itr = --atomicassets::offers.end();
 
     check(last_offer_itr->sender == buyoffer_itr->recipient && last_offer_itr->recipient == get_self(),
         "The last created AtomicAssets offer must be from the buyoffer recipient to the AtomicMarket contract");
-    
+
     check(std::is_permutation(
             last_offer_itr->sender_asset_ids.begin(),
             last_offer_itr->sender_asset_ids.end(),
@@ -1118,7 +1136,7 @@ ACTION atomicmarket::acceptbuyo(
         "The last created AtomicAssets offer must contain the assets of the buyoffer");
     check(last_offer_itr->recipient_asset_ids.size() == 0,
         "The last created AtomicAssets offer must not ask for any assets in return");
-    
+
     check(last_offer_itr->memo == "buyoffer",
         "The last created AtomicAssets offer must have the memo \"buyoffer\"");
 
@@ -1142,7 +1160,7 @@ ACTION atomicmarket::acceptbuyo(
 
 
     check(is_valid_marketplace(taker_marketplace), "The taker marketplace is not a valid marketplace");
-    
+
     internal_payout_sale(
         buyoffer_itr->price,
         buyoffer_itr->recipient,
@@ -1162,7 +1180,7 @@ ACTION atomicmarket::acceptbuyo(
 
 /**
 * Declines a buyoffer
-* 
+*
 * @required_auth The recipient of the buyoffer
 */
 ACTION atomicmarket::declinebuyo(
@@ -1171,7 +1189,7 @@ ACTION atomicmarket::declinebuyo(
 ) {
     auto buyoffer_itr = buyoffers.require_find(buyoffer_id,
         "No buyoffer with this id exists");
-    
+
     require_auth(buyoffer_itr->recipient);
 
     check(decline_memo.length() <= 256, "A decline memo can only be 256 characters max");
@@ -1330,7 +1348,7 @@ ACTION atomicmarket::paysaleram(
 
     auto sale_itr = sales.require_find(sale_id,
         "No sale with this id exists");
-    
+
     sales_s sale_copy = *sale_itr;
 
     sales.erase(sale_itr);
@@ -1352,7 +1370,7 @@ ACTION atomicmarket::payauctram(
 
     auto auction_itr = auctions.require_find(auction_id,
         "No auction with this id exists");
-    
+
     auctions_s auction_copy = *auction_itr;
 
     auctions.erase(auction_itr);
@@ -1374,7 +1392,7 @@ ACTION atomicmarket::paybuyoram(
 
     auto buyoffer_itr = buyoffers.require_find(buyoffer_id,
         "No buyoffer with this id exists");
-    
+
     buyoffers_s buyoffer_copy = *buyoffer_itr;
 
     buyoffers.erase(buyoffer_itr);
@@ -1457,7 +1475,7 @@ void atomicmarket::receive_asset_transfer(
 
 
 /**
-* This function is called when a "lognewoffer" action receipt from the atomicassets contract is sent to the 
+* This function is called when a "lognewoffer" action receipt from the atomicassets contract is sent to the
 * atomicmarket contract. It handles receiving offers for sales.
 */
 void atomicmarket::receive_asset_offer(
@@ -1649,6 +1667,7 @@ double atomicmarket::get_collection_fee(name collection_name) {
 uint64_t atomicmarket::consume_counter(name counter_name) {
     uint64_t value;
 
+    auto counters = get_counters();
     auto counter_itr = counters.find(counter_name.value);
     if (counter_itr == counters.end()) {
         value = 1; // Starting with 1 instead of 0 because these ids can be front facing
@@ -1662,7 +1681,7 @@ uint64_t atomicmarket::consume_counter(name counter_name) {
             _counter.counter_value++;
         });
     }
-    
+
     return value;
 }
 
@@ -1859,7 +1878,7 @@ void atomicmarket::internal_payout_sale(
             continue;
         }
         if (relevant_counter_id < counter_range_itr->start_id || relevant_counter_id >= counter_range_itr->end_id) {
-            continue;    
+            continue;
         }
 
         fee_payouts.push_back({

@@ -56,7 +56,7 @@ namespace delphioracle {
     indexed_by<"timestamp"_n, const_mem_fun<datapoints_s, uint64_t, &datapoints_s::by_timestamp>>>
     datapoints_t;
 
-    pairs_t pairs = pairs_t(DELPHIORACLE_ACCOUNT, DELPHIORACLE_ACCOUNT.value);
+    pairs_t get_pairs() = {pairs_t(DELPHIORACLE_ACCOUNT, DELPHIORACLE_ACCOUNT.value)};
 
     datapoints_t get_datapoints(name pair_name) {
         return datapoints_t(DELPHIORACLE_ACCOUNT, pair_name.value);

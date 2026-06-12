@@ -7,6 +7,8 @@
 #include <atomicassets-interface.hpp>
 #include <delphioracle-interface.hpp>
 
+#include <math.h>
+
 using namespace std;
 using namespace eosio;
 
@@ -407,9 +409,7 @@ private:
 
     typedef multi_index <name("buyoffers"), buyoffers_s> buyoffers_t;
 
-    /**
-     * Buy offers based on a template
-     */
+
     TABLE template_buyoffer_s {
         uint64_t buyoffer_id;
         name     buyer;
@@ -459,7 +459,7 @@ private:
 
 
     TABLE config_s {
-        string              version                  = "1.3.3";
+        string              version                  = "2.0.0";
         uint64_t            sale_counter             = 0; // deprecated and no longer used
         uint64_t            auction_counter          = 0; // deprecated and no longer used
         double              minimum_bid_increase     = 0.1;
@@ -474,19 +474,22 @@ private:
         name                delphioracle_account     = delphioracle::DELPHIORACLE_ACCOUNT;
     };
     typedef singleton <name("config"), config_s>               config_t;
-    // https://github.com/EOSIO/eosio.cdt/issues/280
-    typedef multi_index <name("config"), config_s>             config_t_for_abi;
 
+    /*
+        *********************
+        *** Table Fetches ***
+        *********************
+    */
 
-    sales_t        sales        = sales_t(get_self(), get_self().value);
-    auctions_t     auctions     = auctions_t(get_self(), get_self().value);
-    buyoffers_t    buyoffers    = buyoffers_t(get_self(), get_self().value);
-    template_buyoffers_t template_buyoffers = template_buyoffers_t(get_self(), get_self().value);
-    balances_t     balances     = balances_t(get_self(), get_self().value);
-    marketplaces_t marketplaces = marketplaces_t(get_self(), get_self().value);
-    counters_t     counters     = counters_t(get_self(), get_self().value);
-    bonusfees_t    bonusfees    = bonusfees_t(get_self(), get_self().value);
-    config_t       config       = config_t(get_self(), get_self().value);
+    sales_t        get_sales() {return sales_t(get_self(), get_self().value)};
+    auctions_t     get_auctions() = {return auctions_t(get_self(), get_self().value)};
+    buyoffers_t    get_buyoffers() = {return buyoffers_t(get_self(), get_self().value)};
+    template_buyoffers_t get_template_buyoffers() = {return template_buyoffers_t(get_self(), get_self().value)};
+    balances_t     get_balances() = {return balances_t(get_self(), get_self().value)};
+    marketplaces_t get_marketplaces() = {return marketplaces_t(get_self(), get_self().value)};
+    counters_t     get_counters() = {return counters_t(get_self(), get_self().value)};
+    bonusfees_t    get_bonusfees() = {return bonusfees_t(get_self(), get_self().value)};
+    config_t       get_config() = {return config_t(get_self(), get_self().value)};
 
 
     name get_collection_and_check_assets(name owner, vector <uint64_t> asset_ids);
@@ -538,38 +541,3 @@ private:
     void internal_transfer_assets(name to, vector <uint64_t> asset_ids, string memo);
 
 };
-
-
-extern "C"
-void apply(uint64_t receiver, uint64_t code, uint64_t action) {
-    if (code == receiver) {
-        // Since some version of CDT onl 32 actions can be listed here, because of preprocessor
-        // magic. From 33 on code doesn't compile.
-        // Hacky solution: Split the switch into two...
-        // In the old CDT this creates interestingly enough the same WASM, so we can leave it as is
-        // to support both CDT versions
-        switch (action) {
-            EOSIO_DISPATCH_HELPER(atomicmarket, \
-            (init)(convcounters)(setminbidinc)(setversion)(addconftoken)(adddelphi)(setmarketfee)(regmarket)(withdraw) \
-            (addbonusfee)(addafeectr)(stopbonusfee)(delbonusfee) \
-            (announcesale)(cancelsale)(purchasesale)(assertsale) \
-            (announceauct)(cancelauct)(auctionbid)(auctclaimbuy)(auctclaimsel)(assertauct) \
-            (createbuyo)(cancelbuyo)(acceptbuyo)(declinebuyo) \
-            (paysaleram)(payauctram)(paybuyoram) \
-            (lognewsale)(lognewauct))
-        }
-        switch(action) {
-            EOSIO_DISPATCH_HELPER(atomicmarket, \
-            (lognewbuyo)(logsalestart)(logauctstart) \
-            (createtbuyo)(canceltbuyo)(fulfilltbuyo))
-        }
-    } else if (code == atomicassets::ATOMICASSETS_ACCOUNT.value && action == name("transfer").value) {
-        eosio::execute_action(name(receiver), name(code), &atomicmarket::receive_asset_transfer);
-
-    } else if (code == atomicassets::ATOMICASSETS_ACCOUNT.value && action == name("lognewoffer").value) {
-        eosio::execute_action(name(receiver), name(code), &atomicmarket::receive_asset_offer);
-
-    } else if (action == name("transfer").value) {
-        eosio::execute_action(name(receiver), name(code), &atomicmarket::receive_token_transfer);
-    }
-}
