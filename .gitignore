@@ -7,3 +7,9 @@
 
 build/
 build_new/
+
+node_modules/
+package-lock.json
+
+!tests/fixtures/**/*.abi
+!tests/fixtures/**/*.wasm

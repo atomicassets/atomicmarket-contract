@@ -7,8 +7,15 @@
 #include <atomicassets-interface.hpp>
 #include <delphioracle-interface.hpp>
 
+#include <math.h>
+#include <optional>
+
+#include <checkformat.hpp>
+#include <atomicdata.hpp>
+
 using namespace std;
 using namespace eosio;
+using namespace atomicdata;
 
 static constexpr name DEFAULT_MARKETPLACE_CREATOR = name("fees.atomic");
 
@@ -26,10 +33,35 @@ checksum256 hash_asset_ids(const vector <uint64_t> &asset_ids) {
     return eosio::sha256((char *) asset_ids_array, sizeof(asset_ids_array));
 };
 
+/**
+* Computes the lookup key for an attribute royalty rule.
+* eosio::pack encodes the variant's alternative index in front of the value, so the value's
+* TYPE is part of the key automatically - uint32_t(5) and int32_t(5) hash differently and a
+* rule only matches the exact type the schema deserializes to.
+*/
+static checksum256 hash_attribute_royalty(uint8_t source, const std::string &field, const ATOMIC_ATTRIBUTE &value) {
+    auto packed = eosio::pack(std::make_tuple(source, field, value));
+    return eosio::sha256((const char *) packed.data(), packed.size());
+}
+
 
 CONTRACT atomicmarket : public contract {
 public:
     using contract::contract;
+
+    struct ROYALTYPAIR {
+        name     recipient;
+        uint32_t weight;
+    };
+    typedef std::vector <ROYALTYPAIR> ROYALTYPAIR_V;
+
+    // A single payout credited to the internal balances table, as reported by the
+    // royalty distribution log actions
+    struct ROYALTYPAYOUT {
+        name  recipient;
+        asset amount;
+    };
+    typedef std::vector <ROYALTYPAYOUT> ROYALTYPAYOUT_V;
 
     ACTION init();
 
@@ -40,7 +72,7 @@ public:
     );
 
     ACTION setversion(
-        string new_version
+        const string &new_version
     );
 
     ACTION addconftoken(
@@ -63,8 +95,8 @@ public:
     ACTION addbonusfee(
         name fee_recipient,
         double fee,
-        vector <name> applicable_counter_names,
-        string fee_name
+        const vector <name> &applicable_counter_names,
+        const string &fee_name
     );
 
     ACTION addafeectr(
@@ -93,9 +125,57 @@ public:
     );
 
 
+    /*
+        Royalty split configuration
+
+        All mutations require the authorization of the collection AUTHOR. Authorized
+        accounts of the collection are deliberately not accepted - these configs control
+        where funds are paid out, so only the collection's highest authority may change
+        them. The author pays for the RAM.
+    */
+
+    ACTION setroyalconf(
+        name collection_name,
+        ROYALTYPAIR_V founders,
+        uint8_t attribute_mode,
+        uint32_t split_founders,
+        uint32_t split_templates,
+        uint32_t split_attributes
+    );
+
+    ACTION delroyalconf(
+        name collection_name
+    );
+
+    ACTION settemplroy(
+        name collection_name,
+        int32_t template_id,
+        const ROYALTYPAIR_V &recipients
+    );
+
+    ACTION deltemplroy(
+        name collection_name,
+        int32_t template_id
+    );
+
+    ACTION setattrroy(
+        name collection_name,
+        uint8_t source,
+        const string &field,
+        const ATOMIC_ATTRIBUTE &value,
+        uint32_t rule_weight,
+        const ROYALTYPAIR_V &recipients
+    );
+
+    ACTION delattrroy(
+        name collection_name,
+        uint64_t rule_id
+    );
+
+
     ACTION announcesale(
         name seller,
-        vector <uint64_t> asset_ids,
+        const vector <uint64_t> &asset_ids,
         asset listing_price,
         symbol settlement_symbol,
         name maker_marketplace
@@ -114,7 +194,7 @@ public:
 
     ACTION assertsale(
         uint64_t sale_id,
-        vector <uint64_t> asset_ids_to_assert,
+        const vector <uint64_t> &asset_ids_to_assert,
         asset listing_price_to_assert,
         symbol settlement_symbol_to_assert
     );
@@ -122,7 +202,7 @@ public:
 
     ACTION announceauct(
         name seller,
-        vector <uint64_t> asset_ids,
+        const vector <uint64_t> &asset_ids,
         asset starting_bid,
         uint32_t duration,
         name maker_marketplace
@@ -149,7 +229,7 @@ public:
 
     ACTION assertauct(
         uint64_t auction_id,
-        vector <uint64_t> asset_ids_to_assert
+        const vector <uint64_t> &asset_ids_to_assert
     );
 
 
@@ -157,8 +237,8 @@ public:
         name buyer,
         name recipient,
         asset price,
-        vector <uint64_t> asset_ids,
-        string memo,
+        const vector <uint64_t> &asset_ids,
+        const string &memo,
         name maker_marketplace
     );
 
@@ -168,14 +248,14 @@ public:
 
     ACTION acceptbuyo(
         uint64_t buyoffer_id,
-        vector <uint64_t> expected_asset_ids,
+        const vector <uint64_t> &expected_asset_ids,
         asset expected_price,
         name taker_marketplace
     );
 
     ACTION declinebuyo(
         uint64_t buyoffer_id,
-        string decline_memo
+        const string &decline_memo
     );
 
     /**
@@ -222,6 +302,52 @@ public:
         name taker_marketplace
     );
 
+
+    /*
+        Rentals
+
+        Custodial rental flow:
+        1. The owner announces a rental listing (announcerent), specifying the price per hour,
+           the settlement symbol, and the maximum duration a single rental can cover
+        2. The owner transfers the asset to the atomicmarket contract with the memo "rental",
+           which activates the listing (the contract becomes the custodial owner)
+        3. A renter pays for a number of hours from their deposited balance (rentasset). The
+           payment is distributed like a sale payout (market fees, collection fee / royalty
+           splits, remainder to the listing owner) and the atomicassets HOLDERSHIP of the
+           asset is moved to the renter, while ownership stays with the contract
+        4. After the rental period is over, anyone can reset the holdership back to the
+           contract (endrent), making the listing rentable again
+        5. The owner can cancel the listing and reclaim the asset whenever no rental is
+           actively running (cancelrent)
+    */
+
+    ACTION announcerent(
+        name lister,
+        uint64_t asset_id,
+        asset price_per_hour,
+        symbol settlement_symbol,
+        uint32_t maximum_rental_duration,
+        name maker_marketplace
+    );
+
+    ACTION cancelrent(
+        uint64_t asset_id
+    );
+
+    ACTION rentasset(
+        name renter,
+        uint64_t asset_id,
+        uint32_t rental_hours,
+        asset expected_price_per_hour,
+        uint64_t intended_delphi_median,
+        name taker_marketplace
+    );
+
+    ACTION endrent(
+        uint64_t asset_id
+    );
+
+
     ACTION paysaleram(
         name payer,
         uint64_t sale_id
@@ -237,34 +363,39 @@ public:
         uint64_t buyoffer_id
     );
 
-
-    void receive_token_transfer(
-        name from,
-        name to,
-        asset quantity,
-        string memo
+    ACTION payrentram(
+        name payer,
+        uint64_t asset_id
     );
 
-    void receive_asset_transfer(
+
+    [[eosio::on_notify("atomicassets::transfer")]] void receive_asset_transfer(
         name from,
         name to,
-        vector <uint64_t> asset_ids,
-        string memo
+        const vector <uint64_t> &asset_ids,
+        const string &memo
     );
 
-    void receive_asset_offer(
+    [[eosio::on_notify("atomicassets::lognewoffer")]] void receive_asset_offer(
         uint64_t offer_id,
         name sender,
         name recipient,
-        vector <uint64_t> sender_asset_ids,
-        vector <uint64_t> recipient_asset_ids,
-        string memo
+        const vector <uint64_t> &sender_asset_ids,
+        const vector <uint64_t> &recipient_asset_ids,
+        const string &memo
+    );
+
+    [[eosio::on_notify("*::transfer")]] void receive_token_transfer(
+        name from,
+        name to,
+        asset quantity,
+        const string &memo
     );
 
     ACTION lognewsale(
         uint64_t sale_id,
         name seller,
-        vector <uint64_t> asset_ids,
+        const vector <uint64_t> &asset_ids,
         asset listing_price,
         symbol settlement_symbol,
         name maker_marketplace,
@@ -275,7 +406,7 @@ public:
     ACTION lognewauct(
         uint64_t auction_id,
         name seller,
-        vector <uint64_t> asset_ids,
+        const vector <uint64_t> &asset_ids,
         asset starting_bid,
         uint32_t duration,
         uint32_t end_time,
@@ -289,8 +420,8 @@ public:
         name buyer,
         name recipient,
         asset price,
-        vector <uint64_t> asset_ids,
-        string memo,
+        const vector <uint64_t> &asset_ids,
+        const string &memo,
         name maker_marketplace,
         name collection_name,
         double collection_fee
@@ -315,6 +446,70 @@ public:
         uint64_t auction_id
     );
 
+    ACTION lognewrent(
+        uint64_t asset_id,
+        name lister,
+        asset price_per_hour,
+        symbol settlement_symbol,
+        uint32_t maximum_rental_duration,
+        name maker_marketplace,
+        name collection_name,
+        double collection_fee
+    );
+
+    ACTION logrentstart(
+        uint64_t asset_id,
+        name lister
+    );
+
+    ACTION logrental(
+        uint64_t rental_counter_id,
+        uint64_t asset_id,
+        name lister,
+        name renter,
+        uint32_t rental_hours,
+        asset paid_settlement_price,
+        uint32_t rental_end,
+        name taker_marketplace
+    );
+
+    /*
+        Royalty distribution logs - emitted by every settlement (sale, auction, buyoffer,
+        rental) that distributes a collection fee through a royalty split config. One action
+        per asset and category (one per matched rule for the attributes category), carrying
+        the exact amounts credited to the internal balances table.
+
+        These deliberately do NOT require_recipient the payout recipients: notifying
+        arbitrary accounts from inside settlement would let a recipient contract assert in
+        its notification handler and block the collection's sales entirely.
+    */
+
+    ACTION logroyfound(
+        name collection_name,
+        uint64_t asset_id,
+        const ROYALTYPAYOUT_V &payouts
+    );
+
+    ACTION logroytempl(
+        name collection_name,
+        uint64_t asset_id,
+        int32_t template_id,
+        const ROYALTYPAYOUT_V &payouts
+    );
+
+    ACTION logroyattr(
+        name collection_name,
+        uint64_t asset_id,
+        uint64_t rule_id,
+        const ROYALTYPAYOUT_V &payouts
+    );
+
+    ACTION logroydust(
+        name collection_name,
+        name collection_author,
+        asset amount
+    );
+
 private:
     struct COUNTER_RANGE {
         name counter_name;
@@ -334,6 +529,58 @@ private:
         bool   invert_delphi_pair;
     };
 
+    /**
+    * The relevant parts of an atomicassets collections row. Read through
+    * partial_read_collection, which never deserializes the (potentially huge)
+    * description blob at the end of the row.
+    */
+    struct COLLECTION_INFO {
+        name   author;
+        double market_fee;
+    };
+
+    // Per-collection royalty split config - scope: get_self()
+    TABLE royaltyconf_s {
+        name          collection;
+        ROYALTYPAIR_V founders;
+        uint8_t       attribute_mode = 0;   // 0 = merged/union, 1 = granular per-source
+                                            // locked while attribute rules exist (the two modes
+                                            // occupy disjoint lookup hash spaces)
+        uint32_t      split_founders   = 0; // category weights; renormalized at settlement
+        uint32_t      split_templates  = 0; // across the categories that actually have payees
+        uint32_t      split_attributes = 0;
+
+        uint64_t primary_key() const { return collection.value; };
+    };
+
+    typedef multi_index <name("royaltyconf"), royaltyconf_s> royaltyconf_t;
+
+    // Per-template royalties - scope: collection
+    TABLE royaltytemp_s {
+        int32_t       template_id;          // must reference a real template; -1 is invalid here
+        ROYALTYPAIR_V recipients;
+
+        uint64_t primary_key() const { return uint64_t(uint32_t(template_id)); }
+    };
+    typedef multi_index <name("royaltytemp"), royaltytemp_s> royaltytemp_t;
+
+    // Attribute royalty rules, one row per rule - scope: collection
+    TABLE royaltyattr_s {
+        uint64_t         index;             // available_primary_key()
+        uint8_t          source;            // 0 = merged, 1 = templ immut, 2 = asset immut,
+                                            // 3 = templ mut, 4 = asset mut
+        std::string      field;
+        ATOMIC_ATTRIBUTE value;             // kept readable for introspection / UIs
+        uint32_t         weight;            // this rule's weight WITHIN the attributes category
+        ROYALTYPAIR_V    recipients;
+        checksum256      lookup_hash;       // hash_attribute_royalty(source, field, value)
+
+        uint64_t    primary_key() const { return index; }
+        checksum256 by_hash()     const { return lookup_hash; }
+    };
+    typedef eosio::multi_index <name("royaltyattr"), royaltyattr_s,
+        indexed_by <name("byhash"), const_mem_fun <royaltyattr_s, checksum256, &royaltyattr_s::by_hash>>
+    > royaltyattr_t;
 
     TABLE balances_s {
         name           owner;
@@ -407,9 +654,6 @@ private:
 
     typedef multi_index <name("buyoffers"), buyoffers_s> buyoffers_t;
 
-    /**
-     * Buy offers based on a template
-     */
     TABLE template_buyoffer_s {
         uint64_t buyoffer_id;
         name     buyer;
@@ -424,6 +668,26 @@ private:
 
     typedef multi_index <name("tbuyoffers"), template_buyoffer_s> template_buyoffers_t;
 
+    TABLE rentals_s {
+        uint64_t asset_id;
+        name     owner;                     // the listing creator; receives the rental payouts
+        name     holder;                    // the current renter; name("") when not rented out
+        asset    price_per_hour;            // denoted in the listing symbol
+        symbol   settlement_symbol;         // what the rental is actually paid in
+        uint32_t maximum_rental_duration;   // seconds; the longest period a rental can cover
+        uint32_t rental_end;                // seconds since epoch; 0 when not rented out
+        bool     asset_transferred;         // true once the asset is in contract custody
+        name     maker_marketplace;
+        name     collection_name;
+        double   collection_fee;
+
+        uint64_t primary_key() const { return asset_id; };
+        uint64_t by_rental_end() const { return (uint64_t) rental_end; };
+    };
+
+    typedef multi_index <name("rentals"), rentals_s,
+        indexed_by <name("rentalends"), const_mem_fun <rentals_s, uint64_t, &rentals_s::by_rental_end>>>
+    rentals_t;
 
     TABLE marketplaces_s {
         name marketplace_name;
@@ -459,7 +723,7 @@ private:
 
 
     TABLE config_s {
-        string              version                  = "1.3.3";
+        string              version                  = "2.0.0";
         uint64_t            sale_counter             = 0; // deprecated and no longer used
         uint64_t            auction_counter          = 0; // deprecated and no longer used
         double              minimum_bid_increase     = 0.1;
@@ -474,22 +738,60 @@ private:
         name                delphioracle_account     = delphioracle::DELPHIORACLE_ACCOUNT;
     };
     typedef singleton <name("config"), config_s>               config_t;
-    // https://github.com/EOSIO/eosio.cdt/issues/280
-    typedef multi_index <name("config"), config_s>             config_t_for_abi;
+
+    /*
+        *********************
+        *** Table Fetches ***
+        *********************
+
+        Tables are constructed lazily inside the actions that actually use them instead of
+        being constructed as contract members - constructing every table object on every
+        action dispatch wastes CPU.
+    */
+
+    royaltyconf_t get_royaltyconf() { return royaltyconf_t(get_self(), get_self().value); }
+    royaltytemp_t get_royaltytemp(name collection_name) { return royaltytemp_t(get_self(), collection_name.value); }
+    royaltyattr_t get_royaltyattr(name collection_name) { return royaltyattr_t(get_self(), collection_name.value); }
+
+    balances_t     get_balances() { return balances_t(get_self(), get_self().value); }
+
+    sales_t        get_sales() { return sales_t(get_self(), get_self().value); }
+    auctions_t     get_auctions() { return auctions_t(get_self(), get_self().value); }
+    buyoffers_t    get_buyoffers() { return buyoffers_t(get_self(), get_self().value); }
+    template_buyoffers_t get_template_buyoffers() { return template_buyoffers_t(get_self(), get_self().value); }
+    rentals_t      get_rentals() { return rentals_t(get_self(), get_self().value); }
+
+    marketplaces_t get_marketplaces() { return marketplaces_t(get_self(), get_self().value); }
+    counters_t     get_counters() { return counters_t(get_self(), get_self().value); }
+    bonusfees_t    get_bonusfees() { return bonusfees_t(get_self(), get_self().value); }
+    config_t       get_config() { return config_t(get_self(), get_self().value); }
+
+    /**
+    * Deserializing the config singleton is comparatively expensive (it holds the supported
+    * token and symbol pair vectors) and most actions need it several times through different
+    * helpers, so the first read is cached for the lifetime of the action.
+    *
+    * Admin actions that MODIFY the config must keep using get_config() directly and must not
+    * read through this cache after writing.
+    */
+    std::optional <config_s> config_cache;
+
+    const config_s &cached_config() {
+        if (!config_cache) {
+            config_cache = get_config().get();
+        }
+        return *config_cache;
+    }
 
 
-    sales_t        sales        = sales_t(get_self(), get_self().value);
-    auctions_t     auctions     = auctions_t(get_self(), get_self().value);
-    buyoffers_t    buyoffers    = buyoffers_t(get_self(), get_self().value);
-    template_buyoffers_t template_buyoffers = template_buyoffers_t(get_self(), get_self().value);
-    balances_t     balances     = balances_t(get_self(), get_self().value);
-    marketplaces_t marketplaces = marketplaces_t(get_self(), get_self().value);
-    counters_t     counters     = counters_t(get_self(), get_self().value);
-    bonusfees_t    bonusfees    = bonusfees_t(get_self(), get_self().value);
-    config_t       config       = config_t(get_self(), get_self().value);
+    COLLECTION_INFO partial_read_collection(name collection_name);
+
+    name require_collection_author(name collection_name);
+
+    void validate_royalty_recipients(const ROYALTYPAIR_V &recipients);
 
 
-    name get_collection_and_check_assets(name owner, vector <uint64_t> asset_ids);
+    name get_collection_and_check_assets(name owner, const vector <uint64_t> &asset_ids);
 
     name get_collection_author(name collection_name);
 
@@ -513,10 +815,16 @@ private:
     bool is_valid_marketplace(name marketplace);
 
 
+    asset calc_settlement_price(
+        const asset &listing_price,
+        symbol settlement_symbol,
+        uint64_t intended_delphi_median
+    );
+
     void internal_withdraw_tokens(
         name withdrawer,
         asset quantity,
-        string memo
+        const string &memo
     );
 
     void internal_payout_sale(
@@ -524,52 +832,29 @@ private:
         name seller,
         name maker_marketplace,
         name taker_marketplace,
-        name collection_author,
+        name collection_name,
         double collection_fee,
+        const vector <uint64_t> &asset_ids,
+        name asset_scope,
         name relevant_counter_name,
         uint64_t relevant_counter_id,
-        string seller_payout_message
+        const string &seller_payout_message
+    );
+
+    void distribute_collection_fee(
+        name collection_name,
+        name collection_author,
+        asset total_fee,
+        const vector <uint64_t> &asset_ids,
+        name asset_scope
     );
 
     void internal_add_balance(name owner, asset quantity);
 
     void internal_decrease_balance(name owner, asset quantity);
 
-    void internal_transfer_assets(name to, vector <uint64_t> asset_ids, string memo);
+    void internal_transfer_assets(name to, const vector <uint64_t> &asset_ids, const string &memo);
+
+
 
 };
-
-
-extern "C"
-void apply(uint64_t receiver, uint64_t code, uint64_t action) {
-    if (code == receiver) {
-        // Since some version of CDT onl 32 actions can be listed here, because of preprocessor
-        // magic. From 33 on code doesn't compile.
-        // Hacky solution: Split the switch into two...
-        // In the old CDT this creates interestingly enough the same WASM, so we can leave it as is
-        // to support both CDT versions
-        switch (action) {
-            EOSIO_DISPATCH_HELPER(atomicmarket, \
-            (init)(convcounters)(setminbidinc)(setversion)(addconftoken)(adddelphi)(setmarketfee)(regmarket)(withdraw) \
-            (addbonusfee)(addafeectr)(stopbonusfee)(delbonusfee) \
-            (announcesale)(cancelsale)(purchasesale)(assertsale) \
-            (announceauct)(cancelauct)(auctionbid)(auctclaimbuy)(auctclaimsel)(assertauct) \
-            (createbuyo)(cancelbuyo)(acceptbuyo)(declinebuyo) \
-            (paysaleram)(payauctram)(paybuyoram) \
-            (lognewsale)(lognewauct))
-        }
-        switch(action) {
-            EOSIO_DISPATCH_HELPER(atomicmarket, \
-            (lognewbuyo)(logsalestart)(logauctstart) \
-            (createtbuyo)(canceltbuyo)(fulfilltbuyo))
-        }
-    } else if (code == atomicassets::ATOMICASSETS_ACCOUNT.value && action == name("transfer").value) {
-        eosio::execute_action(name(receiver), name(code), &atomicmarket::receive_asset_transfer);
-
-    } else if (code == atomicassets::ATOMICASSETS_ACCOUNT.value && action == name("lognewoffer").value) {
-        eosio::execute_action(name(receiver), name(code), &atomicmarket::receive_asset_offer);
-
-    } else if (action == name("transfer").value) {
-        eosio::execute_action(name(receiver), name(code), &atomicmarket::receive_token_transfer);
-    }
-}

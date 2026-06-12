@@ -1,7 +1,9 @@
-# AtomicMarket
-AtomicMarket is a marketplace to sell and auction [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs.
+# AtomicMarket V2.0
+AtomicMarket is a marketplace to sell, auction and rent out [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs. V2.0 builds on the AtomicAssets V2.0 contract.
 
-### [Documentation can be found here.](https://github.com/pinknetworkx/atomicmarket-contract/wiki)
+### [Documentation can be found here.](docs/wiki/Home.md)
+
+(V1 documentation for the upstream contract: [pinknetworkx wiki](https://github.com/pinknetworkx/atomicmarket-contract/wiki))
 
 ## Useful links
 - API: https://github.com/pinknetworkx/eosio-contract-api
@@ -16,9 +18,17 @@ AtomicMarket is a marketplace to sell and auction [AtomicAssets](https://github.
 
 	Instead of using transfers, AtomicAssets **offers** are used for sales. These offers are only accepted when someone buys the NFTs for sale. Therefore, sellers keep ownership over their NFTs while they are listed on the AtomicMarket.
 
-- **Selling / Auctioning multiple NFTs at once**
+- **Custodial rentals**
 
-	Multiple NFTs can be sold / auctioned as bundles. The only requirement for this is that they belong to the same collection.
+	Assets can be rented out per hour. The owner lists an asset and transfers it into contract custody; renters pay from their deposited balance and receive the AtomicAssets V2 *holdership* of the asset for the rental period, while ownership stays with the contract. Rental payments are distributed like sale payouts, including royalties.
+
+- **Royalty splits**
+
+	On top of the collection fee, collection authors can configure how that fee is distributed: globally weighted founder accounts, per-template recipient lists, and attribute-matching rules (e.g. `rarity = legendary`), each with their own weights. Authors can also temporarily lower their collection fee to run collection-wide discounts that apply to existing listings - fee raises never apply retroactively.
+
+- **Single-asset listings**
+
+	Every sale, auction and buyoffer contains exactly one asset (bundle listings were removed in V2.0; legacy bundle listings are cancelled when interacted with). To trade multiple assets at once, create multiple listings within a single transaction.
 
 - **Support for any standard token**
 
