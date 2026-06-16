@@ -577,8 +577,8 @@ ACTION atomicmarket::setattrroy(
             "This collection uses the merged attribute mode, the source must be 0");
     } else {
         check(source >= 1 && source <= 4,
-            "This collection uses the granular attribute mode, the source must be 1 (template immutable), "
-            "2 (asset immutable), 3 (template mutable) or 4 (asset mutable)");
+            "This collection uses the granular attribute mode, the source must be 1 (asset immutable), "
+            "2 (asset mutable), 3 (template immutable) or 4 (template mutable)");
     }
 
     check(field.length() > 0, "field must not be empty");
@@ -1729,8 +1729,8 @@ ACTION atomicmarket::announcerent(
 
     check(maximum_rental_duration >= 3600,
         "The maximum rental duration must be at least one hour (3600 seconds)");
-    check(maximum_rental_duration <= 315360000,
-        "The maximum rental duration can't be longer than 10 years");
+    check(maximum_rental_duration <= 2419200,
+        "The maximum rental duration can't be longer than 28 days");
 
     name assets_collection_name = get_collection_and_check_assets(lister, vector <uint64_t> {asset_id});
 
@@ -2865,9 +2865,10 @@ void atomicmarket::internal_withdraw_tokens(
 /**
 * Gives the seller, the marketplaces and the collection their share of the sale price
 *
-* The collection fee applied is min(fee stored at listing time, fee at execution time), so
-* that authors can lower their fee for temporary collection-wide discounts (raising the fee
-* never affects existing listings)
+* The collection fee applied is the collection's fee at EXECUTION time (read fresh from the
+* AtomicAssets collections row), never the fee stored when the listing was created. This gives
+* the collection author full control: both fee reductions and increases take effect immediately
+* on every existing listing
 *
 * The collection's share is distributed according to the collection's royalty split config
 * (see distribute_collection_fee), or in full to the collection author if no config exists
@@ -2907,13 +2908,15 @@ void atomicmarket::internal_payout_sale(
     internal_add_balance(taker_itr->creator, taker_cut);
     seller_cut_quantity -= taker_cut;
 
-    // Collection fee - the fee at EXECUTION time is used when it is lower than the fee that
-    // was stored when the listing was created. This lets collection authors temporarily
-    // lower their fee to run limited-time discounts that apply to already-listed assets,
-    // while fee RAISES never apply retroactively to existing listings.
+    // Collection fee - the fee at EXECUTION time ALWAYS applies, regardless of the fee that
+    // was stored when the listing was created. This gives the collection author full control:
+    // both fee reductions and fee raises take effect immediately on every already-created
+    // listing (sales, auctions and rentals alike). The stored collection_fee is retained only
+    // for informational / indexing purposes (emitted by the lognew* actions) and no longer
+    // influences the payout.
     // The same partial read also provides the author for the royalty distribution.
     COLLECTION_INFO collection_info = partial_read_collection(collection_name);
-    double effective_collection_fee = std::min(collection_fee, collection_info.market_fee);
+    double effective_collection_fee = collection_info.market_fee;
 
     asset collection_cut = asset((uint64_t)(effective_collection_fee * (double) quantity.amount), quantity.symbol);
     if (asset_ids.size() > 1) {
@@ -3106,17 +3109,19 @@ void atomicmarket::distribute_collection_fee(
 
                 if (!schema_format.empty()) {
                     // The (source id, attribute map) pairs of all data sources that exist for
-                    // this asset. The order is the merge precedence for merged mode:
-                    // asset immutable > asset mutable > template immutable > template mutable
+                    // this asset, pushed in merge-precedence order (highest first). The source
+                    // ids deliberately follow that same precedence, matching the AtomicAssets
+                    // data hierarchy: 1 asset immutable > 2 asset mutable > 3 template immutable
+                    // > 4 template mutable.
                     vector <std::pair <uint8_t, ATTRIBUTE_MAP>> source_maps = {};
 
                     if (asset_itr->immutable_serialized_data.size() > 0) {
                         source_maps.push_back(
-                            {2, atomicdata::deserialize(asset_itr->immutable_serialized_data, schema_format)});
+                            {1, atomicdata::deserialize(asset_itr->immutable_serialized_data, schema_format)});
                     }
                     if (asset_itr->mutable_serialized_data.size() > 0) {
                         source_maps.push_back(
-                            {4, atomicdata::deserialize(asset_itr->mutable_serialized_data, schema_format)});
+                            {2, atomicdata::deserialize(asset_itr->mutable_serialized_data, schema_format)});
                     }
                     if (asset_itr->template_id >= 0) {
                         auto template_itr = collection_templates.find((uint64_t) asset_itr->template_id);
@@ -3124,7 +3129,7 @@ void atomicmarket::distribute_collection_fee(
                             template_itr->schema_name == asset_itr->schema_name &&
                             template_itr->immutable_serialized_data.size() > 0) {
                             source_maps.push_back(
-                                {1, atomicdata::deserialize(template_itr->immutable_serialized_data, schema_format)});
+                                {3, atomicdata::deserialize(template_itr->immutable_serialized_data, schema_format)});
                         }
 
                         auto template_mutable_itr = template_mutables.find((uint64_t) asset_itr->template_id);
@@ -3132,7 +3137,7 @@ void atomicmarket::distribute_collection_fee(
                             template_mutable_itr->schema_name == asset_itr->schema_name &&
                             template_mutable_itr->mutable_serialized_data.size() > 0) {
                             source_maps.push_back(
-                                {3, atomicdata::deserialize(template_mutable_itr->mutable_serialized_data,
+                                {4, atomicdata::deserialize(template_mutable_itr->mutable_serialized_data,
                                     schema_format)});
                         }
                     }

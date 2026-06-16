@@ -75,17 +75,18 @@ Attribute data for an asset can come from four serialized blobs:
 
 | Source | Data |
 |---|---|
-| 1 | Template immutable data |
-| 2 | Asset immutable data |
-| 3 | Template mutable data (AtomicAssets V2) |
-| 4 | Asset mutable data |
+| 1 | Asset immutable data |
+| 2 | Asset mutable data |
+| 3 | Template immutable data |
+| 4 | Template mutable data (AtomicAssets V2) |
 | 0 | The merged union of all of the above |
 
 `attribute_mode` in the config decides how rules are keyed:
 
 - **Mode 0 (merged)**: all sources are merged into one attribute map and rules use
   `source = 0`. When a field exists in multiple sources, the precedence is:
-  **asset immutable > asset mutable > template immutable > template mutable**.
+  **asset immutable > asset mutable > template immutable > template mutable** — the same
+  order as the source ids 1–4 above.
 - **Mode 1 (granular)**: every source keeps its own attribute map and rules target a
   specific source (1–4).
 
@@ -97,7 +98,7 @@ built from the log actions stay unambiguous.
 
 ## Settlement math
 
-At settlement, the collection fee amount (see [fee discounts](V2-Changes)) is distributed:
+At settlement, the collection fee amount (see [collection fee](V2-Changes)) is distributed:
 
 1. **Per asset**: the amount is divided equally across the listing's assets (V2 listings
    always have exactly one; legacy bundles drain through this path).

@@ -567,8 +567,8 @@ private:
     // Attribute royalty rules, one row per rule - scope: collection
     TABLE royaltyattr_s {
         uint64_t         index;             // available_primary_key()
-        uint8_t          source;            // 0 = merged, 1 = templ immut, 2 = asset immut,
-                                            // 3 = templ mut, 4 = asset mut
+        uint8_t          source;            // 0 = merged, 1 = asset immut, 2 = asset mut,
+                                            // 3 = templ immut, 4 = templ mut (precedence order)
         std::string      field;
         ATOMIC_ATTRIBUTE value;             // kept readable for introspection / UIs
         uint32_t         weight;            // this rule's weight WITHIN the attributes category

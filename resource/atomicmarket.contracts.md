@@ -235,7 +235,7 @@ The asset will be listed for the price of {{listing_price}} which will be settle
 
 If the sale is purchased, the marketplace facilitating the listing of the sale and the marketplace facilitating the purchase of the sale each receive a share of the sale price.
 
-If the sale is purchased, the collection that the listed asset belongs to receives its collection fee share of the sale price, distributed according to the collection's royalty split configuration, or in full to the collection author if no such configuration exists. If the collection fee at the time of the purchase is lower than it was at the time of this announcement, the lower fee is applied.
+If the sale is purchased, the collection that the listed asset belongs to receives its collection fee share of the sale price, distributed according to the collection's royalty split configuration, or in full to the collection author if no such configuration exists. The collection fee applied is the collection's fee at the time of the purchase, regardless of whether it is higher or lower than at the time of this announcement.
 </div>
 
 <b>Clauses:</b>
@@ -291,7 +291,7 @@ This delphioracle median price must have been reported to the delphioracle and m
 
 The price of the sale will be deducted from {{buyer}}'s balance.
 
-The marketplaces facilitating the sale listing and the purchase, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the seller each get their share of the sale price added to their balances. If the collection fee at the time of this purchase is lower than it was when the sale was created, the lower fee is applied.
+The marketplaces facilitating the sale listing and the purchase, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the seller each get their share of the sale price added to their balances. The collection fee applied is the collection's fee at the time of this purchase, regardless of whether it is higher or lower than when the sale was created.
 
 {{#if taker_marketplace}}The marketplace with the name {{taker_marketplace}} facilitates this purchase.
 {{else}}The default marketplace facilitates this purchase.
@@ -358,7 +358,7 @@ The starting bid for this auction will be {{starting_bid}} and the auction will 
 
 If the auction is successful, the marketplace facilitating the creation of the auction and the marketplace facilitating the final bid on the auction each receive a share of the final bid.
 
-If the auction is successful, the collection that the listed asset belongs to receives its collection fee share of the final bid, distributed according to the collection's royalty split configuration, or in full to the collection author if no such configuration exists. If the collection fee at the time of the seller claim is lower than it was at the time of this announcement, the lower fee is applied.
+If the auction is successful, the collection that the listed asset belongs to receives its collection fee share of the final bid, distributed according to the collection's royalty split configuration, or in full to the collection author if no such configuration exists. The collection fee applied is the collection's fee at the time of the seller claim, regardless of whether it is higher or lower than at the time of this announcement.
 </div>
 
 <b>Clauses:</b>
@@ -470,7 +470,7 @@ icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CF
 <div class="description">
 The seller of the auction with the ID {{auction_id}} claims the final bid of the auction. The auction must be finished.
 
-The marketplaces facilitating the auction creation and the final bid, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the seller each get their share of the final bid added to their balances. If the collection fee at the time of this claim is lower than it was when the auction was created, the lower fee is applied.
+The marketplaces facilitating the auction creation and the final bid, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the seller each get their share of the final bid added to their balances. The collection fee applied is the collection's fee at the time of this claim, regardless of whether it is higher or lower than when the auction was created.
 
 If the auction is a legacy bundle listing (more than one asset) and the winning bidder has not claimed yet, the auction is dissolved instead: the winning bid is refunded to the bidder's balance and the assets are returned to the seller.
 
@@ -596,7 +596,7 @@ The recipient needs to have previously created an AtomicAssets trade offer, offe
 
 The AtomicAssets trade offer is accepted and the asset of the buyoffer is forwarded to the sender of the buyoffer.
 
-The marketplaces facilitating the buyoffer creation and the acceptance, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the recipient of the buyoffer each get their share of the offered price added to their balances. If the collection fee at the time of this acceptance is lower than it was when the buyoffer was created, the lower fee is applied.
+The marketplaces facilitating the buyoffer creation and the acceptance, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and the recipient of the buyoffer each get their share of the offered price added to their balances. The collection fee applied is the collection's fee at the time of this acceptance, regardless of whether it is higher or lower than when the buyoffer was created.
 
 If the buyoffer is a legacy bundle listing (more than one asset), no trade takes place. The buyoffer is cancelled instead and the escrowed price is returned to the balance of the buyoffer's sender.
 
@@ -935,7 +935,7 @@ icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CF
 <div class="description">
 An attribute royalty rule for the collection {{collection_name}} is created or updated.
 
-The rule matches a settled asset when the asset has an attribute with the exact field {{field}}, the exact configured value and value type, read from the data source {{source}} (0 = merged attribute data; 1 = template immutable data; 2 = asset immutable data; 3 = template mutable data; 4 = asset mutable data).
+The rule matches a settled asset when the asset has an attribute with the exact field {{field}}, the exact configured value and value type, read from the data source {{source}} (0 = merged attribute data; 1 = asset immutable data; 2 = asset mutable data; 3 = template immutable data; 4 = template mutable data).
 
 When one or more rules match a settled asset, the attributes category share of the collection fee is first divided between the matched rules proportional to their rule weights (this rule's weight is {{rule_weight}}), and each rule's share is then distributed to its configured recipients, proportional to their weights.
 
@@ -1047,7 +1047,7 @@ If the price of the buyoffer differs from {{expected_price}}, the transaction fa
 
 The AtomicAssets trade offer is accepted and the asset is forwarded to the buyer of the buyoffer.
 
-The marketplaces facilitating the buyoffer creation and the fulfillment, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and {{seller}} each get their share of the offered price added to their balances. If the collection fee at the time of this fulfillment is lower than it was when the buyoffer was created, the lower fee is applied.
+The marketplaces facilitating the buyoffer creation and the fulfillment, the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists), and {{seller}} each get their share of the offered price added to their balances. The collection fee applied is the collection's fee at the time of this fulfillment, regardless of whether it is higher or lower than when the buyoffer was created.
 
 {{#if taker_marketplace}}The marketplace with the name {{taker_marketplace}} facilitates this fulfillment.
 {{else}}The default marketplace facilitates this fulfillment.
@@ -1085,7 +1085,7 @@ While the asset is rented out, the renter receives the AtomicAssets HOLDERSHIP o
 {{else}}The default marketplace facilitates this listing.
 {{/if}}
 
-When the asset is rented, the marketplaces facilitating the listing and the rental, and the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists) each receive a share of the rental payment; the remainder is paid out to {{lister}}. If the collection fee at the time of a rental is lower than it was at the time of this announcement, the lower fee is applied.
+When the asset is rented, the marketplaces facilitating the listing and the rental, and the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists) each receive a share of the rental payment; the remainder is paid out to {{lister}}. The collection fee applied is the collection's fee at the time of a rental, regardless of whether it is higher or lower than at the time of this announcement.
 </div>
 
 <b>Clauses:</b>
@@ -1137,7 +1137,7 @@ If the price per hour of the listing differs from {{expected_price_per_hour}}, t
 
 The total rental price (price per hour times hours, converted to the listing's settlement symbol if the listing uses a delphi pairing, using the delphioracle median price {{intended_delphi_median}} where applicable) is deducted from {{renter}}'s balance.
 
-The marketplaces facilitating the listing and this rental, and the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists) each get their share of the rental payment added to their balances; the remainder is paid out to the listing's owner. If the collection fee at the time of this rental is lower than it was when the listing was created, the lower fee is applied.
+The marketplaces facilitating the listing and this rental, and the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists) each get their share of the rental payment added to their balances; the remainder is paid out to the listing's owner. The collection fee applied is the collection's fee at the time of this rental, regardless of whether it is higher or lower than when the listing was created.
 
 {{renter}} receives the AtomicAssets HOLDERSHIP of the asset until the end of the rental period; the ownership stays with the AtomicMarket account. The rental period does not renew automatically.
 

@@ -24,7 +24,7 @@ AtomicMarket is a marketplace to sell, auction and rent out [AtomicAssets](https
 
 - **Royalty splits**
 
-	On top of the collection fee, collection authors can configure how that fee is distributed: globally weighted founder accounts, per-template recipient lists, and attribute-matching rules (e.g. `rarity = legendary`), each with their own weights. Authors can also temporarily lower their collection fee to run collection-wide discounts that apply to existing listings - fee raises never apply retroactively.
+	On top of the collection fee, collection authors can configure how that fee is distributed: globally weighted founder accounts, per-template recipient lists, and attribute-matching rules (e.g. `rarity = legendary`), each with their own weights. The collection fee applied at settlement is always the fee at execution time, so author fee changes — discounts *and* increases — take effect immediately on all existing listings.
 
 - **Single-asset listings**
 

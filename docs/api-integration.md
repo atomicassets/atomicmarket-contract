@@ -31,7 +31,7 @@ auction transfers, `sale` / `buyoffer` / `tbuyoffer` for offers).
 
 **Behavior changes to existing actions** (section 5 — these WILL break naive state
 machines): single-asset listings, legacy-bundle auto-cancellation, execution-time
-collection-fee discounting.
+collection fee (applied at settlement, section 5.3).
 
 **Important for trace consumption**: none of the royalty log actions notify any account
 (`require_recipient` deliberately absent — a notified recipient contract could abort
@@ -57,7 +57,7 @@ One row per listed asset (a rental listing holds exactly one asset; the asset id
 | `asset_transferred` | bool | true once the asset is in contract custody |
 | `maker_marketplace` | name | |
 | `collection_name` | name | |
-| `collection_fee` | float64 | fee at listing time (see fee discount, section 5.3) |
+| `collection_fee` | float64 | fee at listing time; informational only — settlement uses the execution-time fee (section 5.3) |
 
 Secondary index `rentalends` (uint64 on `rental_end`) — useful for expiry sweeps.
 
@@ -82,7 +82,7 @@ PK: `template_id` (stored int32, keyed as uint64). Fields: `template_id` (int32)
 | Field | Type | Notes |
 |---|---|---|
 | `index` | uint64 | PK = the rule id; allocated from a persistent counter, **never reused** |
-| `source` | uint8 | 0 merged / 1 templ immutable / 2 asset immutable / 3 templ mutable / 4 asset mutable |
+| `source` | uint8 | 0 merged / 1 asset immutable / 2 asset mutable / 3 templ immutable / 4 templ mutable |
 | `field` | string | |
 | `value` | `ATOMIC_ATTRIBUTE` variant | same variant type as AtomicAssets data |
 | `weight` | uint32 | the rule's weight within the attributes category |
@@ -206,18 +206,20 @@ on the row's asset count (which you already have in your DB):
 | `cancelsale` / `cancelauct` | now allowed for **anyone** on bundles (and bundle auctions with bids, refunding the bidder) — EXCEPT partially-claimed bundle auctions, which can't be cancelled | cancelled |
 | offer memo `sale` / transfer memo `auction` with >1 assets | transaction aborts (bundles can't activate) | nothing |
 
-### 5.3 Execution-time collection fee discount
+### 5.3 Execution-time collection fee
 
-The applied collection fee is `min(fee stored in the listing row, the collection's
-market_fee on AtomicAssets at execution time)`. The `collection_fee` field in
-sales/auctions/buyoffers/rentals rows is therefore an **upper bound**, not the applied fee.
+The applied collection fee is the collection's `market_fee` on AtomicAssets **at execution
+time**, read live at settlement — *not* the fee stored in the listing row. The
+`collection_fee` field in sales/auctions/buyoffers/rentals rows is therefore informational
+only (the fee at listing time); it does not determine the payout.
 
 - With a royalty config: the applied amount = the logged `logroy*` sum (section 4.2).
-- Without: applied amount = `floor(min(row.collection_fee, current AA market_fee) × price)`
-  — you already track AA `setmarketfee`, so both inputs are in your DB.
+- Without: applied amount = `floor(current AA market_fee × price)`
+  — you already track AA `setmarketfee`, so the current fee is in your DB.
 
-This is deliberate product behavior (authors can run temporary collection-wide discounts);
-expect fee changes mid-listing to be common, not exceptional.
+This is deliberate product behavior: the collection author has full control, and fee changes
+— down *or* up — apply to all existing listings immediately. Expect fee changes mid-listing
+to be common, not exceptional.
 
 ### 5.4 Royalty config authorization
 
