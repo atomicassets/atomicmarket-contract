@@ -43,9 +43,10 @@ branch `feat/v2-integration`) and extends the upstream AtomicMarket with:
   deliberately rejected). Category splits renormalize across categories that have payees;
   rounding dust goes to the collection author; payouts accrue to the `balances` table
   (recipients withdraw via `withdraw`) - never pushed as inline transfers
-- **Collection fee discounts**: settlements apply min(fee stored at listing time, fee at
-  execution time), so authors can run temporary collection-wide discounts; raises never
-  apply retroactively
+- **Collection fee at execution time**: settlements apply the collection's fee at execution
+  time (read live from AtomicAssets), not the fee stored at listing time, so author fee
+  changes — discounts and raises alike — take effect immediately on all existing listings;
+  the stored `collection_fee` is retained only for indexing/logging
 - **Notification handlers**: `[[eosio::on_notify]]` attributes in the header route
   `atomicassets::transfer`, `atomicassets::lognewoffer`, and wildcard `*::transfer` (token
   deposits); the exact atomicassets handlers take precedence over the wildcard
@@ -87,7 +88,7 @@ npx jest market     # run test files matching a pattern
 
 ### Test Structure
 - `tests/market-smoke.test.js` - end-to-end suite: notification dispatch routing, sale payouts
-  (legacy + royalty splits with exact integer math), fee discounts, bundle-removal behavior
+  (legacy + royalty splits with exact integer math), execution-time collection fee, bundle-removal behavior
   (including legacy rows injected via `tables.X(...).set(...)`), and the full rental lifecycle
 - `tests/fixtures/eosio.token/` - token contract fixture (wasm + abi)
 - `tests/fixtures/atomicassets/` - the AtomicAssets V2 contract the market integrates with.

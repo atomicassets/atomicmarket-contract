@@ -24,13 +24,15 @@ purchased in one transaction — covers the same use cases cleanly.
 | `cancelsale` / `cancelauct` on a bundle | Allowed for **anyone** (bundles count as invalid listings); bundle auctions with bids refund the bidder |
 | Activating a bundle (offer memo `sale` / transfer memo `auction` with multiple assets) | Rejected with a pointer to the cancel actions |
 
-## Collection fee discounts
+## Collection fee at execution time
 
-Settlements apply `min(collection fee stored at listing time, collection fee at execution
-time)`. Lowering a collection's fee on AtomicAssets therefore immediately discounts **all
-existing listings** of the collection — enabling temporary, collection-wide promotion
-windows — while *raising* the fee never affects already-created listings retroactively.
-This applies to sales, auctions, both buyoffer types and rentals.
+Settlements apply the collection's fee **at execution time** (read live from AtomicAssets),
+regardless of the fee stored when the listing was created. Changing a collection's fee on
+AtomicAssets therefore takes effect immediately on **all existing listings** of the
+collection — both reductions (temporary, collection-wide promotion windows) *and* increases
+apply, giving the collection author full control over their fee. This applies to sales,
+auctions, both buyoffer types and rentals. The listing row still records the fee at listing
+time, but only for informational / indexing purposes — it no longer affects the payout.
 
 ## For indexers and API providers
 
@@ -52,7 +54,8 @@ New actions to index:
 
 Behavioral changes to existing actions: the legacy-bundle table above (purchases/bids/
 accepts of bundle rows now mutate state *without* trading), and the effective collection
-fee at settlement may be lower than the fee stored in the listing row.
+fee at settlement is the collection's fee at execution time, which may differ — lower or
+higher — from the fee stored in the listing row.
 
 ## CPU optimizations (no external behavior change)
 

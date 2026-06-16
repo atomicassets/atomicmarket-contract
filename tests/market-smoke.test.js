@@ -405,16 +405,19 @@ describe('atomicmarket end to end', () => {
         expect(sellerTokens).toEqual([{ balance: WAX(0.96) }]);
     });
 
-    test('raising the collection fee after listing does NOT apply retroactively', async () => {
+    test('raising the collection fee after listing applies at execution time', async () => {
         await listAndActivateSale([ASSET1], 1);
         await deposit('buyer', 1);
 
+        // the author raises the fee after listing: 10% -> 15%
         await atomicassets.actions.setmarketfee([COL, 0.15]).send('author@active');
 
         await atomicmarket.actions.purchasesale(['buyer', 1, 0, '']).send('buyer@active');
 
-        // the 10% fee stored at listing time wins over the raised 15%
-        expect(balanceOf('author')).toEqual([WAX(0.1)]);
+        // the fee at execution time (15%) now applies, overriding the 10% stored at listing time
+        expect(balanceOf('author')).toEqual([WAX(0.15)]);
+        const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
+        expect(sellerTokens).toEqual([{ balance: WAX(0.83) }]); // 1 - 0.15 collection - 0.01 maker - 0.01 taker
     });
 
     test('minimal 28-byte collection row (empty lists, empty data) can list and sell', async () => {
@@ -468,13 +471,13 @@ describe('atomicmarket end to end', () => {
         // attributes-only config in granular mode (1)
         await atomicmarket.actions.setroyalconf([COL, [], 1, 0, 0, 1]).send('author@active');
 
-        // source 2 = asset immutable data - ASSET1 has rarity=legendary there
+        // source 1 = asset immutable data - ASSET1 has rarity=legendary there
         await atomicmarket.actions.setattrroy([
-            COL, 2, 'rarity', ['string', 'legendary'], 1, [{ recipient: 'attrroy1', weight: 1 }],
+            COL, 1, 'rarity', ['string', 'legendary'], 1, [{ recipient: 'attrroy1', weight: 1 }],
         ]).send('author@active');
-        // source 1 = template immutable data - template 1 has NO rarity, so this never matches
+        // source 3 = template immutable data - template 1 has NO rarity, so this never matches
         await atomicmarket.actions.setattrroy([
-            COL, 1, 'rarity', ['string', 'legendary'], 1, [{ recipient: 'temproy1', weight: 1 }],
+            COL, 3, 'rarity', ['string', 'legendary'], 1, [{ recipient: 'temproy1', weight: 1 }],
         ]).send('author@active');
 
         await listAndActivateSale([ASSET1], 1);

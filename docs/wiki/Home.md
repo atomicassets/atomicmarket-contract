@@ -11,7 +11,7 @@ V2.0 builds on the AtomicAssets V2.0 contract.
 | **Royalty splits** | The collection fee can be distributed across weighted founders, per-template recipients, and attribute-matching rules instead of going entirely to the collection author | [Royalty Splits](Royalty-Splits) |
 | **Custodial rentals** | Assets can be rented out per hour; renters receive the AtomicAssets *holdership* while ownership stays in contract custody | [Rentals](Rentals) |
 | **Single-asset listings** | Every sale, auction and buyoffer contains exactly one asset; bundle listings were removed | [V2 Changes](V2-Changes) |
-| **Collection fee discounts** | Settlements apply the *lower* of the fee at listing time and the fee at execution time, enabling temporary collection-wide discounts | [V2 Changes](V2-Changes) |
+| **Execution-time collection fee** | Settlements apply the collection's fee at execution time, so author fee changes — down *or* up — take effect immediately on all existing listings | [V2 Changes](V2-Changes) |
 | **CPU optimizations** | Lazy table construction, per-action config caching, size-capped raw reads of the collections table | [V2 Changes](V2-Changes) |
 
 ## Core concepts (unchanged from V1)
@@ -36,7 +36,7 @@ rental) distributes the payment as follows:
 
 1. Maker marketplace fee (default 1%)
 2. Taker marketplace fee (default 1%)
-3. Collection fee — `min(fee at listing time, fee at execution time)`, distributed per the
+3. Collection fee — the collection's fee **at execution time**, distributed per the
    collection's [royalty split config](Royalty-Splits), or in full to the collection author
    if none exists
 4. Bonus fees (admin-configured, if applicable)

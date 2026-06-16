@@ -30,7 +30,8 @@ announcerent ──> transfer (memo "rental") ──> rentasset ──> [extensi
      `settlement_symbol`, a delphi pair must be configured and the rental is paid in the
      settlement symbol at the oracle rate at renting time (e.g. price in USD, paid in WAX).
    - `maximum_rental_duration` (seconds) is the longest period one rental — including
-     extensions by the same renter — can cover. Minimum 3600 (one hour), maximum 10 years.
+     extensions by the same renter — can cover. Minimum 3600 (one hour), maximum 28 days
+     (2,419,200 seconds).
 
 2. **Activate** — the owner transfers the asset to the market account with the memo
    `rental`. The contract becomes the custodial owner. Each asset is its own listing
@@ -52,7 +53,7 @@ announcerent ──> transfer (memo "rental") ──> rentasset ──> [extensi
    - The total price (`price_per_hour × hours`, oracle-converted if applicable) is deducted
      from the renter's balance and paid out like a sale: marketplace fees, the collection
      fee (with [royalty splits](Royalty-Splits) and
-     [fee discounts](V2-Changes)), remainder to the listing owner.
+     [collection fee](V2-Changes)), remainder to the listing owner.
    - The AtomicAssets holdership of the asset moves to the renter until `rental_end`.
    - `expected_price_per_hour` protects the renter against listing changes between signing
      and execution.
