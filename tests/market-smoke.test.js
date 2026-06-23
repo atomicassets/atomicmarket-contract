@@ -943,6 +943,6 @@ describe('atomicmarket end to end', () => {
             atomicmarket.actions.purchasesale([
                 'buyer', 1, 0, '',
             ]).send('buyer@active')
-        ).rejects.toThrow(/Total fees exceed the listing price/);
+        ).rejects.toThrow(/Total fees leave no payout for the seller/);
     });
 });

@@ -2971,11 +2971,13 @@ void atomicmarket::internal_payout_sale(
     }
 
     // Backstop: the accumulated fees (maker + taker + collection + any bonus fees) must
-    // never exceed the listing price. The config-time bounds in setmarketfee / addbonusfee
-    // make this unreachable, but assert it here so stacked bonus fees can never underflow
-    // the seller payout and brick the settlement with a confusing balance error.
-    check(seller_cut_quantity.amount >= 0,
-        "Total fees exceed the listing price");
+    // leave a positive payout for the seller. The config-time bounds in setmarketfee /
+    // addbonusfee cover a single fee, but multiple bonus fees can still stack past the
+    // price on the same payout, so assert it here. Require > 0 (not >= 0): a zero remainder
+    // would otherwise revert downstream in internal_withdraw_tokens with an unrelated
+    // "must be positive" error.
+    check(seller_cut_quantity.amount > 0,
+        "Total fees leave no payout for the seller");
 
     // Payout seller
     internal_add_balance(
