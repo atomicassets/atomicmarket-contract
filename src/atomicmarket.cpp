@@ -412,6 +412,7 @@ ACTION atomicmarket::migratebal(name from, name to) {
     require_auth(get_self());
 
     check(is_account(to), "to account does not exist");
+    check(from != to, "from and to must be different accounts");
 
     auto balances = get_balances();
 

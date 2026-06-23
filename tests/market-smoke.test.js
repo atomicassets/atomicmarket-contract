@@ -954,4 +954,13 @@ describe('atomicmarket end to end', () => {
             atomicmarket.actions.migratebal(['fees.atomic', 'founder1']).send(`${MARKET}@active`)
         ).rejects.toThrow(/No balances found/);
     });
+
+    test('migratebal rejects when from and to are the same account', async () => {
+        setBalance('fees.atomic', [WAX(5)]);
+        await expect(
+            atomicmarket.actions.migratebal(['fees.atomic', 'fees.atomic']).send(`${MARKET}@active`)
+        ).rejects.toThrow(/must be different accounts/);
+        // the balance must be untouched
+        expect(balanceOf('fees.atomic')).toEqual([WAX(5)]);
+    });
 });
