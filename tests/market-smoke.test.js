@@ -896,4 +896,23 @@ describe('atomicmarket end to end', () => {
             ]).send('renter@active')
         ).rejects.toThrow(/differs from the expected price/);
     });
+
+    /* ------------------------------------------------------------------ */
+    /* 4. Low hardening: empty AtomicAssets offers table guard            */
+    /* ------------------------------------------------------------------ */
+
+    test('acceptbuyo with no AtomicAssets offer present rejects instead of decrementing end() on an empty table', async () => {
+        await deposit('buyer', 1);
+        await atomicmarket.actions.createbuyo([
+            'buyer', 'seller', WAX(1), [ASSET1], '', '',
+        ]).send('buyer@active');
+
+        // The recipient accepts without having created the matching AtomicAssets offer,
+        // so the offers table is empty - the guard must reject cleanly.
+        await expect(
+            atomicmarket.actions.acceptbuyo([
+                1, [ASSET1], WAX(1), '',
+            ]).send('seller@active')
+        ).rejects.toThrow(/no AtomicAssets offer present to accept/);
+    });
 });

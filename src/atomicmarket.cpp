@@ -1471,9 +1471,12 @@ ACTION atomicmarket::acceptbuyo(
     check(buyoffer_itr->price == expected_price,
         "The price of this buyoffer differ from the expected price");
 
-    // This could theoretically fail if there is not a single AtomicAssets offer exists
-    // Because it is assumed that this will rarely if ever be the case, no explicit check is added for that
+    // The recipient is expected to have created an AtomicAssets offer with the assets in the
+    // same transaction. Guard the empty-table case explicitly - decrementing end() on an
+    // empty multi_index is undefined behavior.
     auto atomicassets_offers = atomicassets::get_offers();
+    check(atomicassets_offers.begin() != atomicassets_offers.end(),
+        "There is no AtomicAssets offer present to accept this buyoffer");
     auto last_offer_itr = --atomicassets_offers.end();
 
     check(last_offer_itr->sender == buyoffer_itr->recipient && last_offer_itr->recipient == get_self(),
@@ -1645,6 +1648,8 @@ ACTION atomicmarket::fulfilltbuyo(
     // Get the last offer on atomic assets. It is expected that in the same transaction an offer
     // with the memo "tbuyoffer" was made to atomicmarket with the singular asset
     auto atomicassets_offers = atomicassets::get_offers();
+    check(atomicassets_offers.begin() != atomicassets_offers.end(),
+        "There is no AtomicAssets offer present to fulfill this buyoffer");
     auto last_offer_itr = --atomicassets_offers.end();
     // Verify the offer is from the correct account to atomicmarket
     check(last_offer_itr->sender == seller && last_offer_itr->recipient == get_self(),
@@ -2917,6 +2922,13 @@ void atomicmarket::internal_payout_sale(
     // The same partial read also provides the author for the royalty distribution.
     COLLECTION_INFO collection_info = partial_read_collection(collection_name);
     double effective_collection_fee = collection_info.market_fee;
+
+    // The live fee is read straight from the AtomicAssets collections row. Re-assert the
+    // same ceiling enforced when a listing is created, so a fee that is somehow above the
+    // maximum (e.g. a future AtomicAssets row-layout change misreading this value) cannot
+    // make the collection cut exceed the price and underflow the seller payout.
+    check(effective_collection_fee <= atomicassets::MAX_MARKET_FEE,
+        "The collection fee at execution time exceeds the maximum market fee");
 
     asset collection_cut = asset((uint64_t)(effective_collection_fee * (double) quantity.amount), quantity.symbol);
     if (asset_ids.size() > 1) {
