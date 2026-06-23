@@ -2924,11 +2924,12 @@ void atomicmarket::internal_payout_sale(
     double effective_collection_fee = collection_info.market_fee;
 
     // The live fee is read straight from the AtomicAssets collections row. Re-assert the
-    // same ceiling enforced when a listing is created, so a fee that is somehow above the
-    // maximum (e.g. a future AtomicAssets row-layout change misreading this value) cannot
-    // make the collection cut exceed the price and underflow the seller payout.
-    check(effective_collection_fee <= atomicassets::MAX_MARKET_FEE,
-        "The collection fee at execution time exceeds the maximum market fee");
+    // valid range enforced when a listing is created, so a fee that is somehow out of range
+    // (e.g. a future AtomicAssets row-layout change misreading this value) cannot break the
+    // payout. The lower bound also matters: a negative double cast to uint64_t when computing
+    // the collection cut is undefined behavior.
+    check(effective_collection_fee >= 0 && effective_collection_fee <= atomicassets::MAX_MARKET_FEE,
+        "The collection fee at execution time is outside the valid range");
 
     asset collection_cut = asset((uint64_t)(effective_collection_fee * (double) quantity.amount), quantity.symbol);
     if (asset_ids.size() > 1) {
