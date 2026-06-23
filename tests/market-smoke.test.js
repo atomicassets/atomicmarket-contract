@@ -896,4 +896,35 @@ describe('atomicmarket end to end', () => {
             ]).send('renter@active')
         ).rejects.toThrow(/differs from the expected price/);
     });
+
+    /* ------------------------------------------------------------------ */
+    /* 4. assert* asset-id length mismatch (is_permutation guard)         */
+    /* ------------------------------------------------------------------ */
+
+    test('assertsale with more asset ids than the sale rejects cleanly (no out-of-bounds read)', async () => {
+        await listAndActivateSale([ASSET1], 1);
+        await expect(
+            atomicmarket.actions.assertsale([
+                1, [ASSET1, ASSET2], WAX(1), '8,WAX',
+            ]).send('buyer@active')
+        ).rejects.toThrow(/differ from the asset ids of this sale/);
+    });
+
+    test('assertsale with the matching single asset id passes', async () => {
+        await listAndActivateSale([ASSET1], 1);
+        await atomicmarket.actions.assertsale([
+            1, [ASSET1], WAX(1), '8,WAX',
+        ]).send('buyer@active');
+    });
+
+    test('assertauct with more asset ids than the auction rejects cleanly', async () => {
+        await atomicmarket.actions.announceauct([
+            'seller', [ASSET1], WAX(1), 600, '',
+        ]).send('seller@active');
+        await expect(
+            atomicmarket.actions.assertauct([
+                1, [ASSET1, ASSET2],
+            ]).send('buyer@active')
+        ).rejects.toThrow(/differ from the asset ids of this auction/);
+    });
 });
