@@ -119,6 +119,17 @@ public:
     );
 
 
+    ACTION setdefmktcr(
+        name new_creator
+    );
+
+
+    ACTION migratebal(
+        name from,
+        name to
+    );
+
+
     ACTION withdraw(
         name owner,
         asset token_to_withdraw

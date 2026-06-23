@@ -374,6 +374,81 @@ ACTION atomicmarket::regmarket(
 
 
 /**
+* Sets the creator of the default (empty-name) marketplace.
+*
+* The default marketplace is seeded at init() with DEFAULT_MARKETPLACE_CREATOR. On chains
+* where that account does not exist (e.g. fees.atomic on XPR Network), the maker/taker fees
+* routed to the default marketplace would accrue to an unusable account. This lets the
+* contract redirect the default marketplace's fee recipient to a real account at runtime,
+* keeping a single chain-agnostic binary.
+*
+* @required_auth The contract itself
+*/
+ACTION atomicmarket::setdefmktcr(name new_creator) {
+    require_auth(get_self());
+
+    check(is_account(new_creator), "new_creator account does not exist");
+
+    auto marketplaces = get_marketplaces();
+    auto marketplace_itr = marketplaces.require_find(name("").value,
+        "Default marketplace not found");
+
+    marketplaces.modify(marketplace_itr, same_payer, [&](auto &_marketplace) {
+        _marketplace.creator = new_creator;
+    });
+}
+
+
+/**
+* Migrates all accumulated balances from one account to another.
+*
+* Used together with setdefmktcr when the default marketplace's fee recipient changes and the
+* balances already accrued to the old account need to be moved to the new one. Quantities are
+* merged per symbol; the source balance row is erased.
+*
+* @required_auth The contract itself
+*/
+ACTION atomicmarket::migratebal(name from, name to) {
+    require_auth(get_self());
+
+    check(is_account(to), "to account does not exist");
+
+    auto balances = get_balances();
+
+    auto from_itr = balances.require_find(from.value,
+        "No balances found for the from account");
+
+    auto to_itr = balances.find(to.value);
+    if (to_itr == balances.end()) {
+        balances.emplace(get_self(), [&](auto &_balance) {
+            _balance.owner = to;
+            _balance.quantities = from_itr->quantities;
+        });
+    } else {
+        vector <asset> merged = to_itr->quantities;
+        for (const asset &from_quantity : from_itr->quantities) {
+            bool found = false;
+            for (asset &to_quantity : merged) {
+                if (to_quantity.symbol == from_quantity.symbol) {
+                    to_quantity += from_quantity;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                merged.push_back(from_quantity);
+            }
+        }
+        balances.modify(to_itr, same_payer, [&](auto &_balance) {
+            _balance.quantities = merged;
+        });
+    }
+
+    balances.erase(from_itr);
+}
+
+
+/**
 * Withdraws a token from a users balance. The specified token is then transferred to the user.
 *
 * @required_auth owner
