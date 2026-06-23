@@ -107,9 +107,19 @@ def assert_idempotent(abi: dict) -> None:
 
 def verify_against(raw_path: str, patched_path: str) -> None:
     """Assert the patched ABI differs from the raw CDT ABI by ONLY the two
-    sanctioned transformations. Catches a patcher (or a future contract change)
-    that rewrites anything it should not — in particular a vector<int8_t> field
-    spelled `bytes` inline that gets wrongly converted to `uint8[]`."""
+    sanctioned transformations (pair first/second -> key/value on pair_* structs;
+    bytes -> uint8[] on non-INT8_VEC types/fields), with the same interface
+    (actions/tables and their types, and the same set of type/struct names).
+
+    Catches a patcher (or future contract change) that rewrites anything outside
+    that envelope — a non-`bytes` type/field becoming `uint8[]`, a renamed or
+    retyped action/table, an added/removed struct, a changed struct `base`, etc.
+
+    Limitation: it canNOT distinguish a vector<int8_t> from a vector<uint8_t>,
+    because CDT 4.1 emits both as `bytes` and the ABI carries no signedness. Any
+    `bytes` -> `uint8[]` change is therefore accepted as sanctioned. A genuinely
+    new inline vector<int8_t> field would still be (wrongly) converted and pass
+    here — preserving signed vectors relies on the INT8_VEC typedef being used."""
     with open(raw_path) as fh:
         raw = json.load(fh)
     with open(patched_path) as fh:
@@ -117,15 +127,22 @@ def verify_against(raw_path: str, patched_path: str) -> None:
 
     errors = []
 
-    # The patched ABI must describe the same interface: same actions, tables, and
-    # the same set of type/struct names. Only spellings may differ.
+    # The patched ABI must describe the same interface: same set of type/struct
+    # names, and — for actions and tables — the same name->type mapping (a changed
+    # action/table type is a breaking interface change the spelling pass must not
+    # introduce). Only spellings may differ.
     def names(items, key):
         return sorted(item[key] for item in items)
 
-    for section, key in (("actions", "name"), ("tables", "name"),
-                         ("types", "new_type_name"), ("structs", "name")):
+    for section, key in (("types", "new_type_name"), ("structs", "name")):
         if names(raw.get(section, []), key) != names(patched.get(section, []), key):
             errors.append(f"{section} set changed between raw and patched ABI")
+
+    for section in ("actions", "tables"):
+        raw_map = {item["name"]: item["type"] for item in raw.get(section, [])}
+        patched_map = {item["name"]: item["type"] for item in patched.get(section, [])}
+        if raw_map != patched_map:
+            errors.append(f"{section} name->type mapping changed between raw and patched ABI")
 
     raw_types = {t["new_type_name"]: t["type"] for t in raw.get("types", [])}
     patched_types = {t["new_type_name"]: t["type"] for t in patched.get("types", [])}
@@ -146,6 +163,8 @@ def verify_against(raw_path: str, patched_path: str) -> None:
         patched_struct = patched_structs.get(name)
         if patched_struct is None:
             continue  # already reported by the set check above
+        if raw_struct.get("base", "") != patched_struct.get("base", ""):
+            errors.append(f"struct {name}: base changed {raw_struct.get('base')!r} -> {patched_struct.get('base')!r}")
         raw_fields = raw_struct.get("fields", [])
         patched_fields = patched_struct.get("fields", [])
         if len(raw_fields) != len(patched_fields):
