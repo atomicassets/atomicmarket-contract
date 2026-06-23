@@ -927,4 +927,17 @@ describe('atomicmarket end to end', () => {
             ]).send('buyer@active')
         ).rejects.toThrow(/differ from the asset ids of this auction/);
     });
+
+    test('acceptbuyo with more expected asset ids than the buyoffer rejects cleanly', async () => {
+        await deposit('buyer', 1);
+        await atomicmarket.actions.createbuyo([
+            'buyer', 'seller', WAX(1), [ASSET1], '', '',
+        ]).send('buyer@active');
+
+        await expect(
+            atomicmarket.actions.acceptbuyo([
+                1, [ASSET1, ASSET2], WAX(1), '',
+            ]).send('seller@active')
+        ).rejects.toThrow(/differ from the expected asset ids/);
+    });
 });

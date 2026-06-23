@@ -1488,7 +1488,7 @@ ACTION atomicmarket::acceptbuyo(
             buyoffer_itr->asset_ids.begin(),
             buyoffer_itr->asset_ids.end()
         ),
-        "The last created AtomicAssets offer must contain the assets of the buyoffer");
+        "The last created AtomicAssets offer must contain exactly the assets of the buyoffer");
     check(last_offer_itr->recipient_asset_ids.size() == 0,
         "The last created AtomicAssets offer must not ask for any assets in return");
 
