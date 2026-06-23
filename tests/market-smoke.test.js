@@ -896,4 +896,53 @@ describe('atomicmarket end to end', () => {
             ]).send('renter@active')
         ).rejects.toThrow(/differs from the expected price/);
     });
+
+    /* ------------------------------------------------------------------ */
+    /* 4. Fee-ceiling guards                                              */
+    /* ------------------------------------------------------------------ */
+
+    test('setmarketfee rejects maker + taker that, with the max collection fee, exceeds the price', async () => {
+        // 0.5 + 0.5 + 0.15 (MAX_MARKET_FEE) = 1.15 > 1.0
+        await expect(
+            atomicmarket.actions.setmarketfee([0.5, 0.5]).send(`${MARKET}@active`)
+        ).rejects.toThrow(/may not exceed the sale price/);
+    });
+
+    test('setmarketfee accepts maker + taker that leaves room for the collection fee', async () => {
+        // 0.4 + 0.4 + 0.15 = 0.95 <= 1.0
+        await atomicmarket.actions.setmarketfee([0.4, 0.4]).send(`${MARKET}@active`);
+        const config = atomicmarket.tables.config(nameToBigInt(atomicmarket.name)).getTableRows()[0];
+        expect(Number(config.maker_market_fee)).toBeCloseTo(0.4);
+        expect(Number(config.taker_market_fee)).toBeCloseTo(0.4);
+    });
+
+    test('addbonusfee rejects a single fee that overflows the maker + taker + max collection fee', async () => {
+        // default maker/taker 0.01 each + 0.15 + 0.9 = 1.07 > 1.0
+        await expect(
+            atomicmarket.actions.addbonusfee([
+                'founder1', 0.9, ['sale'], 'too big',
+            ]).send(`${MARKET}@active`)
+        ).rejects.toThrow(/may not exceed the sale price/);
+    });
+
+    test('stacked bonus fees that exceed the price are caught at settlement instead of bricking with a balance error', async () => {
+        // Each bonus fee passes the per-fee config bound (0.01+0.01+0.15+0.45 = 0.62 <= 1.0),
+        // but together with the 1%+1% market fees and the 10% collection fee they sum to
+        // 1.02 of the price. The seller-payout backstop must reject this clearly.
+        await atomicmarket.actions.addbonusfee([
+            'founder1', 0.45, ['sale'], 'bonus a',
+        ]).send(`${MARKET}@active`);
+        await atomicmarket.actions.addbonusfee([
+            'founder2', 0.45, ['sale'], 'bonus b',
+        ]).send(`${MARKET}@active`);
+
+        await listAndActivateSale([ASSET1], 1);
+        await deposit('buyer', 1);
+
+        await expect(
+            atomicmarket.actions.purchasesale([
+                'buyer', 1, 0, '',
+            ]).send('buyer@active')
+        ).rejects.toThrow(/Total fees exceed the listing price/);
+    });
 });
