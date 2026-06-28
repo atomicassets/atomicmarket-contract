@@ -161,26 +161,19 @@ describe('atomicmarket auctions', () => {
     // injection). NOTE: a directly-set row is NOT added to the assetidshash secondary index,
     // so it is only useful where the contract reaches the row by primary key or where its
     // absence from the index is the intended scenario.
-    const injectAuction = (id, overrides) => {
-        atomicmarket.tables.auctions(nameToBigInt(atomicmarket.name)).set(
-            BigInt(id), atomicmarket.name, {
-                auction_id: id,
-                seller: 'buyer',
-                asset_ids: [ASSET1],
-                end_time: 4070908800, // far future
-                assets_transferred: false,
-                current_bid: WAX(10),
-                current_bidder: '',
-                claimed_by_seller: false,
-                claimed_by_buyer: false,
-                maker_marketplace: '',
-                taker_marketplace: '',
-                collection_name: COL,
-                collection_fee: 0.1,
-                ...overrides,
-            }
-        );
+    // Create a REAL foreign auction for `assetId` by `other`, registered in the
+    // assetidshash secondary index, then return the asset to `seller` so the foreign
+    // auction is stale but still indexed. A directly-set row (TableView.set) skips the
+    // secondary index, which both announceauct's duplicate check and receive_asset_transfer
+    // walk - so injection would give false coverage. The ownership swap exercises the index
+    // for real.
+    const announceForeignAuction = async (assetId, other = 'buyer', startingBid = WAX(10)) => {
+        await atomicassets.actions.transfer(['seller', other, [assetId], 'lend']).send('seller@active');
+        await announceAuct([assetId], startingBid, { actor: other });
+        await atomicassets.actions.transfer([other, 'seller', [assetId], 'return']).send(`${other}@active`);
     };
+
+    const auctionsBySeller = (s) => marketTables.auctions().filter((a) => a.seller === s);
 
     const mintNonTransferableAsset = async () => {
         // template 2: not transferable
@@ -245,16 +238,17 @@ describe('atomicmarket auctions', () => {
     });
 
     test('announceauct: another account already announced for the same asset (both coexist)', async () => {
-        // a foreign auction for the same asset must not block the owner's own announce
-        // (the duplicate check only fires for the same seller)
-        injectAuction(100, { seller: 'buyer' });
+        // a foreign (now-stale) auction for the same asset must not block the owner's own
+        // announce - the duplicate check only fires for the same seller. Built as a real,
+        // index-registered auction so the secondary-index path is actually exercised.
+        await announceForeignAuction(ASSET1, 'buyer');
 
         await announceAuct([ASSET1], WAX(10));
 
         const auctions = marketTables.auctions();
         expect(auctions.length).toBe(2);
-        expect(auctionById(1).seller).toBe('seller');
-        expect(auctionById(100).seller).toBe('buyer');
+        expect(auctionsBySeller('seller').length).toBe(1);
+        expect(auctionsBySeller('buyer').length).toBe(1);
     });
 
     test('announceauct: throw on empty asset_ids (size != 1)', async () => {
@@ -327,13 +321,15 @@ describe('atomicmarket auctions', () => {
     });
 
     test('transfer: activates only the seller\'s auction, leaving a foreign auction untouched', async () => {
-        await announceAuct([ASSET1], WAX(10)); // real, indexed, id 1
-        injectAuction(100, { seller: 'buyer' }); // foreign row for the same asset
+        // both auctions are real and in the assetidshash index; receive_asset_transfer must
+        // pick the one whose seller == the transfer sender.
+        await announceForeignAuction(ASSET1, 'buyer'); // real, indexed, stale (buyer)
+        await announceAuct([ASSET1], WAX(10));          // seller
 
         await transferForAuction([ASSET1]);
 
-        expect(auctionById(1).assets_transferred).toBe(true);
-        expect(auctionById(100).assets_transferred).toBe(false);
+        expect(auctionsBySeller('seller')[0].assets_transferred).toBe(true);
+        expect(auctionsBySeller('buyer')[0].assets_transferred).toBe(false);
     });
 
     test('transfer: leaves an unrelated auction pending', async () => {

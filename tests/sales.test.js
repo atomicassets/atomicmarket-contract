@@ -153,19 +153,21 @@ describe('atomicmarket sale actions', () => {
     test('announcesale: single-asset sale snapshots the row (offer_id -1, live 10% fee)', async () => {
         await announceSale([ASSET1], 10);
 
-        expect(marketTables.sales()).toEqual([
-            {
-                sale_id: 1,
-                seller: 'seller',
-                asset_ids: [ASSET1],
-                offer_id: -1,
-                listing_price: WAX(10),
-                settlement_symbol: '8,WAX',
-                maker_marketplace: '',
-                collection_name: COL,
-                collection_fee: '0.1',
-            },
-        ]);
+        const sales = marketTables.sales();
+        expect(sales.length).toBe(1);
+        expect(sales[0]).toMatchObject({
+            sale_id: 1,
+            seller: 'seller',
+            asset_ids: [ASSET1],
+            offer_id: -1,
+            listing_price: WAX(10),
+            settlement_symbol: '8,WAX',
+            maker_marketplace: '',
+            collection_name: COL,
+        });
+        // collection_fee is an on-chain double; VeRT renders it as a string, so compare
+        // numerically rather than asserting the string form.
+        expect(Number(sales[0].collection_fee)).toBeCloseTo(0.1);
     });
 
     test('announcesale: a second sale gets the next sale id', async () => {
