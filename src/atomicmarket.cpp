@@ -177,6 +177,13 @@ ACTION atomicmarket::setmarketfee(double maker_market_fee, double taker_market_f
     check(maker_market_fee >= 0 && taker_market_fee >= 0,
         "Market fees need to be at least 0");
 
+    // The maker and taker fees, plus the maximum collection fee that any collection could
+    // charge at execution time, must leave a non-negative payout for the seller. Bounding
+    // this at config time turns a misconfiguration into an up-front error rather than a
+    // settlement that reverts (the seller payout in internal_payout_sale is the backstop).
+    check(maker_market_fee + taker_market_fee + atomicassets::MAX_MARKET_FEE <= 1.0,
+        "The maker, taker and maximum collection fee combined may not exceed the sale price");
+
     auto config = get_config();
     config_s current_config = config.get();
 
@@ -204,6 +211,14 @@ ACTION atomicmarket::addbonusfee(
     check(is_account(fee_recipient), "The fee recipient is not a valid account");
 
     check(fee > 0, "The fee must be positive");
+
+    // Reject a single bonus fee that, on top of the maker, taker and maximum collection
+    // fee, would already exceed the sale price. Multiple bonus fees applying to the same
+    // payout can still stack past 100% - internal_payout_sale enforces the hard backstop.
+    config_s current_config = get_config().get();
+    check(current_config.maker_market_fee + current_config.taker_market_fee +
+              atomicassets::MAX_MARKET_FEE + fee <= 1.0,
+        "This bonus fee combined with the maker, taker and maximum collection fee may not exceed the sale price");
 
     check(applicable_counter_names.size() != 0,
         "Applicable counter names must contain at least one name");
@@ -3047,6 +3062,15 @@ void atomicmarket::internal_payout_sale(
         internal_add_balance(bonusfee_itr->fee_recipient, bonusfee_cut);
         seller_cut_quantity -= bonusfee_cut;
     }
+
+    // Backstop: the accumulated fees (maker + taker + collection + any bonus fees) must
+    // leave a positive payout for the seller. The config-time bounds in setmarketfee /
+    // addbonusfee cover a single fee, but multiple bonus fees can still stack past the
+    // price on the same payout, so assert it here. Require > 0 (not >= 0): a zero remainder
+    // would otherwise revert downstream in internal_withdraw_tokens with an unrelated
+    // "must be positive" error.
+    check(seller_cut_quantity.amount > 0,
+        "Total fees leave no payout for the seller");
 
     // Payout seller
     internal_add_balance(
