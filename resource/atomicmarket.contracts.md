@@ -184,6 +184,54 @@ This action may only be called with the permission of {{creator}}.
 
 
 
+<h1 class="contract">setdefmktcr</h1>
+
+---
+spec_version: "0.2.0"
+title: Set the default marketplace creator
+summary: 'Set the creator of the default marketplace to {{nowrap new_creator}}'
+icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
+---
+
+<b>Description:</b>
+<div class="description">
+Sets the creator of the default (empty-name) marketplace to {{nowrap new_creator}}.
+
+The default marketplace receives the maker and taker fees for listings that do not specify a marketplace. This action redirects those fees to {{new_creator}}.
+</div>
+
+<b>Clauses:</b>
+<div class="clauses">
+This action may only be called with the permission of the contract itself.
+</div>
+
+
+
+
+<h1 class="contract">migratebal</h1>
+
+---
+spec_version: "0.2.0"
+title: Migrate accumulated balances
+summary: 'Migrate the accumulated balance of {{nowrap from}} to {{nowrap to}}'
+icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
+---
+
+<b>Description:</b>
+<div class="description">
+Moves all accumulated balances of {{nowrap from}} to {{nowrap to}}, merging the quantities per token symbol. The balance row of {{from}} is removed.
+
+This is used together with "setdefmktcr" to move fees that already accrued to the previous default marketplace creator over to the new one.
+</div>
+
+<b>Clauses:</b>
+<div class="clauses">
+This action may only be called with the permission of the contract itself.
+</div>
+
+
+
+
 <h1 class="contract">withdraw</h1>
 
 ---

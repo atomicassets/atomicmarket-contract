@@ -896,4 +896,71 @@ describe('atomicmarket end to end', () => {
             ]).send('renter@active')
         ).rejects.toThrow(/differs from the expected price/);
     });
+
+    /* ------------------------------------------------------------------ */
+    /* 4. Default marketplace creator + balance migration (XPR)           */
+    /* ------------------------------------------------------------------ */
+
+    const marketplaceCreator = (marketplaceName) => {
+        const rows = atomicmarket.tables.marketplaces(nameToBigInt(atomicmarket.name)).getTableRows();
+        const row = rows.find((r) => r.marketplace_name === marketplaceName);
+        return row ? row.creator : null;
+    };
+
+    const setBalance = (account, quantities) => {
+        atomicmarket.tables.balances(nameToBigInt(atomicmarket.name)).set(
+            nameToBigInt(Name.from(account)), atomicmarket.name,
+            { owner: account, quantities }
+        );
+    };
+
+    test('setdefmktcr redirects the default marketplace creator', async () => {
+        // init seeds the empty-name default marketplace with creator fees.atomic
+        expect(marketplaceCreator('')).toBe('fees.atomic');
+
+        await atomicmarket.actions.setdefmktcr(['founder1']).send(`${MARKET}@active`);
+
+        expect(marketplaceCreator('')).toBe('founder1');
+    });
+
+    test('setdefmktcr rejects a non-existent account', async () => {
+        await expect(
+            atomicmarket.actions.setdefmktcr(['nonexistent1']).send(`${MARKET}@active`)
+        ).rejects.toThrow(/account does not exist/);
+    });
+
+    test('migratebal merges per symbol into an existing target and erases the source', async () => {
+        setBalance('fees.atomic', [WAX(5), '100.0000 FOO']);
+        setBalance('founder1', [WAX(2)]);
+
+        await atomicmarket.actions.migratebal(['fees.atomic', 'founder1']).send(`${MARKET}@active`);
+
+        // WAX summed (2 + 5), FOO appended, source row removed
+        expect(balanceOf('founder1')).toEqual([WAX(7), '100.0000 FOO']);
+        expect(balanceOf('fees.atomic')).toBeNull();
+    });
+
+    test('migratebal creates the target row when it does not exist', async () => {
+        setBalance('fees.atomic', [WAX(3)]);
+
+        await atomicmarket.actions.migratebal(['fees.atomic', 'founder2']).send(`${MARKET}@active`);
+
+        expect(balanceOf('founder2')).toEqual([WAX(3)]);
+        expect(balanceOf('fees.atomic')).toBeNull();
+    });
+
+    test('migratebal rejects when the source has no balance', async () => {
+        await expect(
+            atomicmarket.actions.migratebal(['fees.atomic', 'founder1']).send(`${MARKET}@active`)
+        ).rejects.toThrow(/No balances found/);
+    });
+
+    test('migratebal rejects when from and to are the same account', async () => {
+        setBalance('fees.atomic', [WAX(5)]);
+        await expect(
+            atomicmarket.actions.migratebal(['fees.atomic', 'fees.atomic']).send(`${MARKET}@active`)
+        ).rejects.toThrow(/must be different accounts/);
+        // the balance must be untouched
+        expect(balanceOf('fees.atomic')).toEqual([WAX(5)]);
+    });
 });
