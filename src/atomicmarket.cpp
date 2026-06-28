@@ -989,7 +989,8 @@ ACTION atomicmarket::assertsale(
     auto sale_itr = sales.require_find(sale_id,
         "No sale with this sale_id exists");
 
-    check(std::is_permutation(asset_ids_to_assert.begin(), asset_ids_to_assert.end(), sale_itr->asset_ids.begin()),
+    check(std::is_permutation(asset_ids_to_assert.begin(), asset_ids_to_assert.end(),
+            sale_itr->asset_ids.begin(), sale_itr->asset_ids.end()),
         "The asset ids to assert differ from the asset ids of this sale");
 
     check(listing_price_to_assert == sale_itr->listing_price,
@@ -1395,7 +1396,8 @@ ACTION atomicmarket::assertauct(
     auto auction_itr = auctions.require_find(auction_id,
         "No auction with this auction_id exists");
 
-    check(std::is_permutation(asset_ids_to_assert.begin(), asset_ids_to_assert.end(), auction_itr->asset_ids.begin()),
+    check(std::is_permutation(asset_ids_to_assert.begin(), asset_ids_to_assert.end(),
+            auction_itr->asset_ids.begin(), auction_itr->asset_ids.end()),
         "The asset ids to assert differ from the asset ids of this auction");
 }
 
@@ -1541,7 +1543,8 @@ ACTION atomicmarket::acceptbuyo(
     check(std::is_permutation(
             buyoffer_itr->asset_ids.begin(),
             buyoffer_itr->asset_ids.end(),
-            expected_asset_ids.begin()
+            expected_asset_ids.begin(),
+            expected_asset_ids.end()
         ),
         "The asset ids of this buyoffer differ from the expected asset ids");
     check(buyoffer_itr->price == expected_price,
@@ -1558,9 +1561,10 @@ ACTION atomicmarket::acceptbuyo(
     check(std::is_permutation(
             last_offer_itr->sender_asset_ids.begin(),
             last_offer_itr->sender_asset_ids.end(),
-            buyoffer_itr->asset_ids.begin()
+            buyoffer_itr->asset_ids.begin(),
+            buyoffer_itr->asset_ids.end()
         ),
-        "The last created AtomicAssets offer must contain the assets of the buyoffer");
+        "The last created AtomicAssets offer must contain exactly the assets of the buyoffer");
     check(last_offer_itr->recipient_asset_ids.size() == 0,
         "The last created AtomicAssets offer must not ask for any assets in return");
 
