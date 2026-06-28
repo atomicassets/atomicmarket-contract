@@ -34,6 +34,13 @@ apply, giving the collection author full control over their fee. This applies to
 auctions, both buyoffer types and rentals. The listing row still records the fee at listing
 time, but only for informational / indexing purposes — it no longer affects the payout.
 
+**Note for sellers:** because the fee is read at settlement, a collection author can raise
+their fee (up to the 15% maximum) after you list, so you can net less than you expected
+based on the fee shown when you created the listing. The fee is always bounded by the 15%
+maximum, and the buyer always pays the listed price — only the split between seller and
+collection moves. There is currently no per-listing "maximum fee I accept" guard; a front
+end may want to surface the live fee at the moment of sale.
+
 ## For indexers and API providers
 
 New tables: `royaltyconf`, `royaltytemp`, `royaltyattr` (see [Royalty Splits](Royalty-Splits)),
