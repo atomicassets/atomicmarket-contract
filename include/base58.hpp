@@ -4,6 +4,11 @@
 
 //(Slightly modified for the needs of our eosio contract)
 
+#pragma once
+
+#include <cassert>
+#include <cctype>
+#include <cstring>
 #include <string>
 #include <vector>
 

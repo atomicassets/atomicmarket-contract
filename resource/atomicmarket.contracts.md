@@ -640,7 +640,7 @@ If the price of the buyoffer differs from {{expected_price}}, the transaction fa
 {{else}}The default marketplace facilitates this buyoffer acceptance.
 {{/if}}
 
-The recipient needs to have previously created an AtomicAssets trade offer, offerring the assets of the buyoffer to the AtomicMarket account without asking for anything in return.
+The recipient needs to have previously created an AtomicAssets trade offer, offering the assets of the buyoffer to the AtomicMarket account without asking for anything in return.
 
 The AtomicAssets trade offer is accepted and the asset of the buyoffer is forwarded to the sender of the buyoffer.
 

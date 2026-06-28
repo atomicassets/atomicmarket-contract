@@ -844,7 +844,6 @@ private:
         name maker_marketplace,
         name taker_marketplace,
         name collection_name,
-        double collection_fee,
         const vector <uint64_t> &asset_ids,
         name asset_scope,
         name relevant_counter_name,

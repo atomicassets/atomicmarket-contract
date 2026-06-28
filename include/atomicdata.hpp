@@ -321,7 +321,7 @@ namespace atomicdata {
                 "Expected a bool (needs to be provided as uint8_t because of C++ restrictions), but got something else");
             uint8_t value = std::get <uint8_t>(attr);
             check(value == 0 || value == 1,
-                "Bools need to be provided as an uin8_t that is either 0 or 1");
+                "Bools need to be provided as an uint8_t that is either 0 or 1");
             return {value};
 
         } else {

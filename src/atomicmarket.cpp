@@ -955,7 +955,6 @@ ACTION atomicmarket::purchasesale(
         sale_itr->maker_marketplace,
         taker_marketplace,
         sale_itr->collection_name,
-        sale_itr->collection_fee,
         sale_itr->asset_ids,
         sale_itr->seller, // the assets are still owned by the seller at this point
         name("sale"),
@@ -1374,7 +1373,6 @@ ACTION atomicmarket::auctclaimsel(
         auction_itr->maker_marketplace,
         auction_itr->taker_marketplace,
         auction_itr->collection_name,
-        auction_itr->collection_fee,
         auction_itr->asset_ids,
         // If the buyer has not claimed yet, the assets are still in contract custody.
         // Otherwise they were transferred to the highest bidder
@@ -1616,7 +1614,6 @@ ACTION atomicmarket::acceptbuyo(
         buyoffer_itr->maker_marketplace,
         taker_marketplace,
         buyoffer_itr->collection_name,
-        buyoffer_itr->collection_fee,
         buyoffer_itr->asset_ids,
         buyoffer_itr->recipient, // the assets are still owned by the recipient at this point
         name("buyoffer"),
@@ -1786,7 +1783,6 @@ ACTION atomicmarket::fulfilltbuyo(
         buyoffer_itr->maker_marketplace,
         taker_marketplace,
         buyoffer_itr->collection_name,
-        buyoffer_itr->collection_fee,
         std::vector <uint64_t> {asset_id},
         seller, // the asset is still owned by the seller at this point
         name("tbuyoffer"),
@@ -2026,7 +2022,6 @@ ACTION atomicmarket::rentasset(
         rental_itr->maker_marketplace,
         taker_marketplace,
         rental_itr->collection_name,
-        rental_itr->collection_fee,
         vector <uint64_t> {asset_id},
         get_self(), // the asset is in contract custody
         name("rental"),
@@ -2983,7 +2978,6 @@ void atomicmarket::internal_payout_sale(
     name maker_marketplace,
     name taker_marketplace,
     name collection_name,
-    double collection_fee,
     const vector <uint64_t> &asset_ids,
     name asset_scope,
     name relevant_counter_name,
