@@ -11,6 +11,7 @@
     "@vaulta/vert": "^2.1.1"
   },
   "devDependencies": {
+    "@wharfkit/antelope": "^1.1.1",
     "jest": "^25.1.0",
     "prettier": "^2.7.1"
   },

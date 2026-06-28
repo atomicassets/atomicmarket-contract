@@ -79,3 +79,20 @@ jobs:
       - name: Run VeRT test suite
         if: steps.harness.outputs.present == 'true'
         run: npx jest --ci
+
+      # The VeRT suite runs against the raw CDT abi. The distributable abi is the
+      # patched one (make release runs scripts/patch-abi.py), which nothing above
+      # exercises — so a bad patch could ship while CI stays green. Build once, keep
+      # the raw abi, then patch it in place (the same transform make release runs;
+      # patching in place keeps raw and patched from one build invocation) — the
+      # patcher self-asserts idempotency. Then assert the patched abi differs from
+      # the raw abi by ONLY the two sanctioned spelling transformations, and parse it
+      # with the canonical serializer so a malformed release abi can't pass.
+      - name: Verify released (patched) ABI
+        if: steps.harness.outputs.present == 'true'
+        run: |
+          make build
+          cp build/atomicmarket.abi /tmp/atomicmarket.raw.abi
+          python3 scripts/patch-abi.py build/atomicmarket.abi
+          python3 scripts/patch-abi.py --verify-against /tmp/atomicmarket.raw.abi build/atomicmarket.abi
+          node -e "const {ABI}=require('@wharfkit/antelope'); const fs=require('fs'); ABI.from(JSON.parse(fs.readFileSync('build/atomicmarket.abi','utf8'))); console.log('patched ABI parses with @wharfkit/antelope');"
