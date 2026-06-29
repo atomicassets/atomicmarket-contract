@@ -351,10 +351,6 @@
                 {
                     "name": "supported_tokens",
                     "type": "extended_symbol[]"
-                },
-                {
-                    "name": "rental_market",
-                    "type": "name"
                 }
             ]
         },
@@ -536,16 +532,6 @@
             "fields": [
                 {
                     "name": "offer_id",
-                    "type": "uint64"
-                }
-            ]
-        },
-        {
-            "name": "delpretitle",
-            "base": "",
-            "fields": [
-                {
-                    "name": "asset_id",
                     "type": "uint64"
                 }
             ]
@@ -1134,24 +1120,6 @@
             ]
         },
         {
-            "name": "pretitle",
-            "base": "",
-            "fields": [
-                {
-                    "name": "title_owner",
-                    "type": "name"
-                },
-                {
-                    "name": "market",
-                    "type": "name"
-                },
-                {
-                    "name": "asset_id",
-                    "type": "uint64"
-                }
-            ]
-        },
-        {
             "name": "reclaim",
             "base": "",
             "fields": [
@@ -1217,6 +1185,16 @@
                 },
                 {
                     "name": "account_to_remove",
+                    "type": "name"
+                }
+            ]
+        },
+        {
+            "name": "rentalcfg_s",
+            "base": "",
+            "fields": [
+                {
+                    "name": "rental_market",
                     "type": "name"
                 }
             ]
@@ -1581,11 +1559,6 @@
             "ricardian_contract": ""
         },
         {
-            "name": "delpretitle",
-            "type": "delpretitle",
-            "ricardian_contract": ""
-        },
-        {
             "name": "deltemplate",
             "type": "deltemplate",
             "ricardian_contract": ""
@@ -1683,11 +1656,6 @@
         {
             "name": "payofferram",
             "type": "payofferram",
-            "ricardian_contract": ""
-        },
-        {
-            "name": "pretitle",
-            "type": "pretitle",
             "ricardian_contract": ""
         },
         {
@@ -1817,6 +1785,13 @@
         {
             "name": "offers",
             "type": "offers_s",
+            "index_type": "i64",
+            "key_names": [],
+            "key_types": []
+        },
+        {
+            "name": "rentalcfg",
+            "type": "rentalcfg_s",
             "index_type": "i64",
             "key_names": [],
             "key_types": []

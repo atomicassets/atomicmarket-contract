@@ -1901,7 +1901,7 @@ ACTION atomicmarket::cancelrent(
 
     atomicassets::leases_t aa_leases = atomicassets::get_leases();
     auto lease_itr = aa_leases.find(asset_id);
-    bool lease_exists = lease_itr != aa_leases.end() && lease_itr->renter != name("");
+    bool lease_exists = lease_itr != aa_leases.end();
     bool active_lease = lease_exists && lease_itr->rental_end > current_time;
 
     check(!active_lease,
@@ -1977,7 +1977,7 @@ ACTION atomicmarket::rentasset(
     // rentals mirror below can lag a keeper-driven reclaim.
     atomicassets::leases_t aa_leases = atomicassets::get_leases();
     auto lease_itr = aa_leases.find(asset_id);
-    bool lease_exists = lease_itr != aa_leases.end() && lease_itr->renter != name("");
+    bool lease_exists = lease_itr != aa_leases.end();
     bool active_lease = lease_exists && lease_itr->rental_end > current_time;
     bool is_extension = active_lease && lease_itr->renter == renter;
 
@@ -2112,7 +2112,7 @@ ACTION atomicmarket::endrent(
     // reclaim. If a keeper already reclaimed it, the row is gone and we just resync the mirror.
     atomicassets::leases_t aa_leases = atomicassets::get_leases();
     auto lease_itr = aa_leases.find(asset_id);
-    if (lease_itr != aa_leases.end() && lease_itr->renter != name("")) {
+    if (lease_itr != aa_leases.end()) {
         check(lease_itr->rental_end <= current_time, "The rental period is not over yet");
 
         action(
