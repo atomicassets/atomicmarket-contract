@@ -679,12 +679,11 @@ private:
     TABLE rentals_s {
         uint64_t asset_id;
         name     owner;                     // the listing creator; receives the rental payouts
-        name     holder;                    // the current renter; name("") when not rented out
+        name     renter;                    // the current renter; name("") when not rented out
         asset    price_per_hour;            // denoted in the listing symbol
         symbol   settlement_symbol;         // what the rental is actually paid in
         uint32_t maximum_rental_duration;   // seconds; the longest period a rental can cover
         uint32_t rental_end;                // seconds since epoch; 0 when not rented out
-        bool     is_rented;                  // true while a renter holds an active lease
         name     maker_marketplace;
         name     collection_name;
         double   collection_fee;

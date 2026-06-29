@@ -11,8 +11,8 @@ const fs = require('fs');
  *     receive_token_transfer, and atomicassets::lognewoffer routes to receive_asset_offer.
  *  2. Sale payouts: legacy collection fee (no royalty config) and the full royalty split
  *     engine (founders / template / attribute categories, exact integer math incl. dust).
- *  3. Custodial rentals: announce -> custody transfer -> rent (holdership moves to the renter
- *     in the atomicassets holders table) -> extension -> expiry -> endrent -> cancelrent.
+ *  3. Non-custodial rentals: announce (no escrow) -> rent (renter becomes the real atomicassets
+ *     owner via a leases lock) -> extension -> expiry -> reclaim/endrent -> cancelrent.
  */
 
 const WAX = (amount) => `${amount.toFixed(8)} WAX`;
@@ -385,7 +385,7 @@ describe('atomicmarket end to end', () => {
         expect(balanceOf('fees.atomic')).toEqual([WAX(0.4)]);   // 2% of 20 WAX
         const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
         expect(sellerTokens).toEqual([{ balance: WAX(17.6) }]); // 88% of 20 WAX
-        expect(marketTables.rentals()[0].holder).toBe('renter');
+        expect(marketTables.rentals()[0].renter).toBe('renter');
         // non-custodial: the renter is the real owner now
         expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
     });
@@ -699,9 +699,8 @@ describe('atomicmarket end to end', () => {
 
         let rentals = marketTables.rentals();
         expect(rentals.length).toBe(1);
-        expect(rentals[0].is_rented).toBe(false);
         expect(rentals[0].owner).toBe('seller');
-        expect(rentals[0].holder).toBe('');
+        expect(rentals[0].renter).toBe('');
 
         // non-custodial: the asset is still the seller's until it's rented
         expect(aaTables.assets('seller').map((a) => a.asset_id)).toContain(ASSET1);
@@ -715,8 +714,7 @@ describe('atomicmarket end to end', () => {
         ]).send('renter@active');
 
         rentals = marketTables.rentals();
-        expect(rentals[0].holder).toBe('renter');
-        expect(rentals[0].is_rented).toBe(true);
+        expect(rentals[0].renter).toBe('renter');
 
         // the renter is now the REAL atomicassets owner, the asset is locked, and the lister's
         // reclaim right is parked in the leases table
@@ -771,8 +769,7 @@ describe('atomicmarket end to end', () => {
         expect(aaTables.leases()).toEqual([]);
         expect(aaTables.assets('seller').map((a) => a.asset_id)).toContain(ASSET1);
         rentals = marketTables.rentals();
-        expect(rentals[0].holder).toBe('');
-        expect(rentals[0].is_rented).toBe(false);
+        expect(rentals[0].renter).toBe('');
         expect(Number(rentals[0].rental_end)).toBe(0);
 
         // owner cancels the (now idle) listing
@@ -808,7 +805,7 @@ describe('atomicmarket end to end', () => {
             rental_end: Number(marketTables.rentals()[0].rental_end),
             market: MARKET,
         }]);
-        expect(marketTables.rentals()[0].holder).toBe('renter2');
+        expect(marketTables.rentals()[0].renter).toBe('renter2');
     });
 
     test('cancelrent on an expired-but-not-ended rental reclaims the asset to the lister', async () => {

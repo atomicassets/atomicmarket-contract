@@ -1850,12 +1850,11 @@ ACTION atomicmarket::announcerent(
     rentals.emplace(lister, [&](auto &_rental) {
         _rental.asset_id = asset_id;
         _rental.owner = lister;
-        _rental.holder = name("");
+        _rental.renter = name("");
         _rental.price_per_hour = price_per_hour;
         _rental.settlement_symbol = settlement_symbol;
         _rental.maximum_rental_duration = maximum_rental_duration;
         _rental.rental_end = 0;
-        _rental.is_rented = false;
         _rental.maker_marketplace = maker_marketplace;
         _rental.collection_name = assets_collection_name;
         _rental.collection_fee = collection_fee;
@@ -2074,9 +2073,8 @@ ACTION atomicmarket::rentasset(
     }
 
     rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
-        _rental.holder = renter;
+        _rental.renter = renter;
         _rental.rental_end = (uint32_t) new_rental_end;
-        _rental.is_rented = true;
     });
 
     action(
@@ -2113,7 +2111,7 @@ ACTION atomicmarket::endrent(
     auto rental_itr = rentals.require_find(asset_id,
         "No rental listing with this asset_id exists");
 
-    check(rental_itr->is_rented, "This asset is not currently rented out");
+    check(rental_itr->renter != name(""), "This asset is not currently rented out");
 
     uint32_t current_time = current_time_point().sec_since_epoch();
 
@@ -2133,9 +2131,8 @@ ACTION atomicmarket::endrent(
     }
 
     rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
-        _rental.holder = name("");
+        _rental.renter = name("");
         _rental.rental_end = 0;
-        _rental.is_rented = false;
     });
 }
 
