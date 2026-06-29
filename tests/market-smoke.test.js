@@ -726,7 +726,6 @@ describe('atomicmarket end to end', () => {
             renter: 'renter',
             rental_start: Number(rentals[0].rental_end) - 2 * 3600,
             rental_end: Number(rentals[0].rental_end),
-            market: MARKET,
         }]);
 
         // payout: 1.0 WAX -> 2% fees.atomic, 10% author, 88% straight to the seller
@@ -803,7 +802,6 @@ describe('atomicmarket end to end', () => {
             renter: 'renter2',
             rental_start: Number(marketTables.rentals()[0].rental_end) - 1 * 3600,
             rental_end: Number(marketTables.rentals()[0].rental_end),
-            market: MARKET,
         }]);
         expect(marketTables.rentals()[0].renter).toBe('renter2');
     });

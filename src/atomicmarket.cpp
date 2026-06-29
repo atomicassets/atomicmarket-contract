@@ -2042,7 +2042,7 @@ ACTION atomicmarket::rentasset(
             permission_level{get_self(), name("active")},
             atomicassets::ATOMICASSETS_ACCOUNT,
             name("leaseextend"),
-            make_tuple(get_self(), asset_id, (uint32_t) new_rental_end)
+            make_tuple(asset_id, (uint32_t) new_rental_end)
         ).send();
     } else {
         // A previous lease that expired but was never reclaimed still locks the asset. Clear it
@@ -2062,7 +2062,6 @@ ACTION atomicmarket::rentasset(
             atomicassets::ATOMICASSETS_ACCOUNT,
             name("leasestart"),
             make_tuple(
-                get_self(),
                 rental_itr->owner,
                 renter,
                 asset_id,
