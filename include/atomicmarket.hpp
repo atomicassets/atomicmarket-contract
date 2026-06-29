@@ -317,19 +317,21 @@ public:
     /*
         Rentals
 
-        Custodial rental flow:
-        1. The owner announces a rental listing (announcerent), specifying the price per hour,
-           the settlement symbol, and the maximum duration a single rental can cover
-        2. The owner transfers the asset to the atomicmarket contract with the memo "rental",
-           which activates the listing (the contract becomes the custodial owner)
-        3. A renter pays for a number of hours from their deposited balance (rentasset). The
+        Non-custodial rental flow (renter-as-owner):
+        1. The owner announces a rental listing (announcerent). The asset is NOT escrowed - it
+           stays fully owned and usable by the lister until it is actually rented.
+        2. A renter pays for a number of hours from their deposited balance (rentasset). The
            payment is distributed like a sale payout (market fees, collection fee / royalty
-           splits, remainder to the listing owner) and the atomicassets HOLDERSHIP of the
-           asset is moved to the renter, while ownership stays with the contract
-        4. After the rental period is over, anyone can reset the holdership back to the
-           contract (endrent), making the listing rentable again
-        5. The owner can cancel the listing and reclaim the asset whenever no rental is
-           actively running (cancelrent)
+           splits, remainder to the listing owner) and atomicmarket drives AtomicAssets to make
+           the RENTER the real owner of the asset (leasestart), parking the lister's reclaim
+           right in the AtomicAssets leases table. The asset is locked while leased.
+        3. An extension by the same renter only bumps the lease end (leaseextend); no second
+           ownership flip.
+        4. After the rental period is over, the asset returns to the lister via the permissionless
+           AtomicAssets `reclaim` (a keeper, endrent, or cancelrent triggers it). atomicmarket's
+           endrent then resyncs its mirror row, making the listing rentable again.
+        5. The owner can cancel the listing whenever no rental is actively running (cancelrent);
+           an expired-but-unreclaimed lease is reclaimed as part of the cancel.
     */
 
     ACTION announcerent(
@@ -466,11 +468,6 @@ public:
         name maker_marketplace,
         name collection_name,
         double collection_fee
-    );
-
-    ACTION logrentstart(
-        uint64_t asset_id,
-        name lister
     );
 
     ACTION logrental(
@@ -687,7 +684,7 @@ private:
         symbol   settlement_symbol;         // what the rental is actually paid in
         uint32_t maximum_rental_duration;   // seconds; the longest period a rental can cover
         uint32_t rental_end;                // seconds since epoch; 0 when not rented out
-        bool     asset_transferred;         // true once the asset is in contract custody
+        bool     is_rented;                  // true while a renter holds an active lease
         name     maker_marketplace;
         name     collection_name;
         double   collection_fee;

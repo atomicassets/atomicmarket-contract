@@ -1796,8 +1796,8 @@ ACTION atomicmarket::fulfilltbuyo(
 
 /**
 * Create a rental listing for a single asset
-* For the listing to become active, the lister needs to use the atomicassets transfer action to
-* transfer the asset to the atomicmarket contract with the memo "rental"
+* Non-custodial: the asset is NOT transferred to the contract. It stays owned and usable by the
+* lister until someone actually rents it (rentasset), at which point ownership moves to the renter.
 *
 * price_per_hour is denoted in the listing symbol; if it differs from the settlement symbol, a
 * delphi symbol pair has to be configured and the rental is paid in the settlement symbol at the
@@ -1855,7 +1855,7 @@ ACTION atomicmarket::announcerent(
         _rental.settlement_symbol = settlement_symbol;
         _rental.maximum_rental_duration = maximum_rental_duration;
         _rental.rental_end = 0;
-        _rental.asset_transferred = false;
+        _rental.is_rented = false;
         _rental.maker_marketplace = maker_marketplace;
         _rental.collection_name = assets_collection_name;
         _rental.collection_fee = collection_fee;
@@ -1882,11 +1882,11 @@ ACTION atomicmarket::announcerent(
 /**
 * Cancels a rental listing
 *
-* If the listing is not active yet, it can be cancelled by the owner - or by anyone if the
-* owner does not own the asset anymore (which makes the listing invalid)
-*
-* If the listing is active (the asset is in contract custody), it can only be cancelled by the
-* owner and only while no rental is actively running. The asset is then transferred back
+* Non-custodially the asset is never escrowed, so cancelling is just removing the listing row.
+* If no rental is active, the owner can cancel - or anyone can, if the owner no longer owns the
+* asset (which makes the listing invalid). An actively running rental cannot be cancelled; an
+* expired-but-unreclaimed rental is reclaimed (returning the asset to the owner) as part of the
+* cancel.
 *
 * @required_auth The listing's owner (see above for the invalid listing exception)
 */
@@ -1897,46 +1897,36 @@ ACTION atomicmarket::cancelrent(
     auto rental_itr = rentals.require_find(asset_id,
         "No rental listing with this asset_id exists");
 
-    if (!rental_itr->asset_transferred) {
+    uint32_t current_time = current_time_point().sec_since_epoch();
+
+    atomicassets::leases_t aa_leases = atomicassets::get_leases();
+    auto lease_itr = aa_leases.find(asset_id);
+    bool lease_exists = lease_itr != aa_leases.end() && lease_itr->renter != name("");
+    bool active_lease = lease_exists && lease_itr->rental_end > current_time;
+
+    check(!active_lease,
+        "The asset is currently rented out. The listing can only be cancelled after the rental period is over");
+
+    if (lease_exists) {
+        // Expired but never reclaimed: only the owner can cancel, and the asset returns to them
+        // via the permissionless reclaim.
+        require_auth(rental_itr->owner);
+
+        action(
+            permission_level{get_self(), name("active")},
+            atomicassets::ATOMICASSETS_ACCOUNT,
+            name("reclaim"),
+            make_tuple(asset_id)
+        ).send();
+    } else {
+        // Not rented: the asset is still with the lister, nothing to return. Anyone may cancel an
+        // invalid listing (the owner no longer owns the asset); otherwise the owner must authorize.
         atomicassets::assets_t owner_assets = atomicassets::get_assets(rental_itr->owner);
         bool is_rental_invalid = owner_assets.find(asset_id) == owner_assets.end();
 
         check(is_rental_invalid || has_auth(rental_itr->owner),
             "The rental listing is not invalid, therefore the authorization of the owner is needed to cancel it");
-
-        rentals.erase(rental_itr);
-        return;
     }
-
-    require_auth(rental_itr->owner);
-
-    check(rental_itr->holder == name("") ||
-          rental_itr->rental_end <= current_time_point().sec_since_epoch(),
-        "The asset is currently rented out. The listing can only be cancelled after the rental period is over");
-
-    if (rental_itr->holder != name("")) {
-        // The rental period is over but the holdership was never reset via endrent.
-        // It needs to be reclaimed BEFORE the asset is transferred back, otherwise the
-        // holders table row would survive the transfer
-        action(
-            permission_level{get_self(), name("active")},
-            atomicassets::ATOMICASSETS_ACCOUNT,
-            name("move"),
-            make_tuple(
-                get_self(),
-                rental_itr->holder,
-                get_self(),
-                vector <uint64_t> {asset_id},
-                string("AtomicMarket Rental Ended")
-            )
-        ).send();
-    }
-
-    internal_transfer_assets(
-        rental_itr->owner,
-        vector <uint64_t> {asset_id},
-        "AtomicMarket Cancelled Rental Listing - Asset ID # " + to_string(asset_id)
-    );
 
     rentals.erase(rental_itr);
 }
@@ -1949,8 +1939,8 @@ ACTION atomicmarket::cancelrent(
 * uses a delphi pairing) is deducted from the renter's balance and paid out like a sale payout
 * (market fees, collection fee / royalty splits, remainder to the listing owner)
 *
-* The atomicassets HOLDERSHIP of the asset is moved to the renter until the rental period is
-* over, while the ownership stays with the atomicmarket contract
+* atomicmarket drives AtomicAssets to make the renter the real OWNER of the asset until the
+* rental period is over; the lister's reclaim right is parked in the AtomicAssets leases table
 *
 * If the renter already holds an active rental for this asset, the new hours extend the
 * current rental period instead (the combined remaining period must stay within the listing's
@@ -1974,9 +1964,6 @@ ACTION atomicmarket::rentasset(
     auto rental_itr = rentals.require_find(asset_id,
         "No rental listing with this asset_id exists");
 
-    check(rental_itr->asset_transferred,
-        "This rental listing is not active yet. The owner first has to transfer the asset to the atomicmarket account");
-
     check(renter != rental_itr->owner, "You can't rent your own asset");
 
     check(rental_itr->price_per_hour == expected_price_per_hour,
@@ -1986,14 +1973,20 @@ ACTION atomicmarket::rentasset(
 
     uint32_t current_time = current_time_point().sec_since_epoch();
 
-    bool has_active_rental = rental_itr->holder != name("") && rental_itr->rental_end > current_time;
-    bool is_extension = has_active_rental && rental_itr->holder == renter;
+    // The AtomicAssets leases table is the source of truth for the on-chain lock state; the
+    // rentals mirror below can lag a keeper-driven reclaim.
+    atomicassets::leases_t aa_leases = atomicassets::get_leases();
+    auto lease_itr = aa_leases.find(asset_id);
+    bool lease_exists = lease_itr != aa_leases.end() && lease_itr->renter != name("");
+    bool active_lease = lease_exists && lease_itr->rental_end > current_time;
+    bool is_extension = active_lease && lease_itr->renter == renter;
 
-    check(!has_active_rental || is_extension,
+    check(!active_lease || is_extension,
         "This asset is currently rented out. It can be rented again once the current rental period is over");
 
     uint64_t added_duration = (uint64_t) rental_hours * 3600;
-    uint64_t new_rental_end = (uint64_t)(is_extension ? rental_itr->rental_end : current_time) + added_duration;
+    uint64_t base_time = is_extension ? (uint64_t) lease_itr->rental_end : (uint64_t) current_time;
+    uint64_t new_rental_end = base_time + added_duration;
 
     check(new_rental_end - current_time <= rental_itr->maximum_rental_duration,
         "The rental period would exceed the maximum rental duration of this listing");
@@ -2016,6 +2009,12 @@ ACTION atomicmarket::rentasset(
 
     uint64_t rental_counter_id = consume_counter(name("rental"));
 
+    // The royalty engine reads the asset's data from its CURRENT owner scope. Non-custodially
+    // that is whoever owns the asset right now (the inline lease actions below run only after
+    // this action returns): the current renter for an extension or an expired-unreclaimed
+    // re-rental, otherwise the listing owner.
+    name asset_scope = lease_exists ? lease_itr->renter : rental_itr->owner;
+
     internal_payout_sale(
         settlement_price,
         rental_itr->owner,
@@ -2023,37 +2022,52 @@ ACTION atomicmarket::rentasset(
         taker_marketplace,
         rental_itr->collection_name,
         vector <uint64_t> {asset_id},
-        get_self(), // the asset is in contract custody
+        asset_scope,
         name("rental"),
         rental_counter_id,
         "AtomicMarket Rental Payout - ID #" + to_string(rental_counter_id)
     );
 
-    if (!is_extension) {
-        // Move the holdership to the renter. If a previous rental expired without endrent
-        // being called, the holdership still sits with the previous renter and is moved
-        // directly from them; otherwise it is moved from the contract itself
-        name move_from = rental_itr->holder == name("") ? get_self() : rental_itr->holder;
-
-        if (move_from != renter) {
+    if (is_extension) {
+        // Same renter, already the owner: only extend the lease end in AtomicAssets.
+        action(
+            permission_level{get_self(), name("active")},
+            atomicassets::ATOMICASSETS_ACCOUNT,
+            name("leaseextend"),
+            make_tuple(get_self(), asset_id, (uint32_t) new_rental_end)
+        ).send();
+    } else {
+        // A previous lease that expired but was never reclaimed still locks the asset. Clear it
+        // first (permissionless reclaim) so leasestart can re-lease from the listing owner.
+        if (lease_exists) {
             action(
                 permission_level{get_self(), name("active")},
                 atomicassets::ATOMICASSETS_ACCOUNT,
-                name("move"),
-                make_tuple(
-                    get_self(),
-                    move_from,
-                    renter,
-                    vector <uint64_t> {asset_id},
-                    string("AtomicMarket Rental - ID # ") + to_string(rental_counter_id)
-                )
+                name("reclaim"),
+                make_tuple(asset_id)
             ).send();
         }
+        // Make the renter the real AtomicAssets owner and lock the asset (the lister's reclaim
+        // right is parked in the AtomicAssets leases table).
+        action(
+            permission_level{get_self(), name("active")},
+            atomicassets::ATOMICASSETS_ACCOUNT,
+            name("leasestart"),
+            make_tuple(
+                get_self(),
+                rental_itr->owner,
+                renter,
+                asset_id,
+                (uint32_t) new_rental_end,
+                string("AtomicMarket Rental - ID # ") + to_string(rental_counter_id)
+            )
+        ).send();
     }
 
     rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
         _rental.holder = renter;
         _rental.rental_end = (uint32_t) new_rental_end;
+        _rental.is_rented = true;
     });
 
     action(
@@ -2075,10 +2089,11 @@ ACTION atomicmarket::rentasset(
 
 
 /**
-* Wraps up an expired rental by moving the holdership of the asset back to the atomicmarket
-* contract, making the listing rentable again
+* Wraps up an expired rental, making the listing rentable again
 *
-* This can be called by anyone - it only resets an expired rental back to its listed state
+* The authoritative return of the asset to the lister is the permissionless AtomicAssets
+* `reclaim`. endrent triggers that reclaim if it has not happened yet (e.g. no keeper ran) and
+* then resyncs atomicmarket's mirror row. It can be called by anyone.
 *
 * @required_auth None
 */
@@ -2089,27 +2104,29 @@ ACTION atomicmarket::endrent(
     auto rental_itr = rentals.require_find(asset_id,
         "No rental listing with this asset_id exists");
 
-    check(rental_itr->holder != name(""), "This asset is not currently rented out");
+    check(rental_itr->is_rented, "This asset is not currently rented out");
 
-    check(rental_itr->rental_end <= current_time_point().sec_since_epoch(),
-        "The rental period is not over yet");
+    uint32_t current_time = current_time_point().sec_since_epoch();
 
-    action(
-        permission_level{get_self(), name("active")},
-        atomicassets::ATOMICASSETS_ACCOUNT,
-        name("move"),
-        make_tuple(
-            get_self(),
-            rental_itr->holder,
-            get_self(),
-            vector <uint64_t> {asset_id},
-            string("AtomicMarket Rental Ended")
-        )
-    ).send();
+    // If the lease still exists in AtomicAssets it must have expired; trigger the permissionless
+    // reclaim. If a keeper already reclaimed it, the row is gone and we just resync the mirror.
+    atomicassets::leases_t aa_leases = atomicassets::get_leases();
+    auto lease_itr = aa_leases.find(asset_id);
+    if (lease_itr != aa_leases.end() && lease_itr->renter != name("")) {
+        check(lease_itr->rental_end <= current_time, "The rental period is not over yet");
+
+        action(
+            permission_level{get_self(), name("active")},
+            atomicassets::ATOMICASSETS_ACCOUNT,
+            name("reclaim"),
+            make_tuple(asset_id)
+        ).send();
+    }
 
     rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
         _rental.holder = name("");
         _rental.rental_end = 0;
+        _rental.is_rented = false;
     });
 }
 
@@ -2280,36 +2297,9 @@ void atomicmarket::receive_asset_transfer(
             )
         ).send();
 
-    } else if (memo == "rental") {
-        auto rentals = get_rentals();
-
-        for (uint64_t asset_id : asset_ids) {
-            auto rental_itr = rentals.require_find(asset_id,
-                ("No rental listing exists for one of the transferred assets - " + to_string(asset_id)).c_str());
-
-            check(rental_itr->owner == from,
-                ("A rental listing for this asset exists, but it belongs to another account - "
-                + to_string(asset_id)).c_str());
-
-            check(!rental_itr->asset_transferred,
-                ("The asset for this rental listing has already been transferred - " + to_string(asset_id)).c_str());
-
-            rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
-                _rental.asset_transferred = true;
-            });
-
-            action(
-                permission_level{get_self(), name("active")},
-                get_self(),
-                name("logrentstart"),
-                make_tuple(
-                    asset_id,
-                    from
-                )
-            ).send();
-        }
-
     } else {
+        // Non-custodial rentals never transfer the asset to the contract, so a "rental" memo is
+        // no longer a valid intake and falls through to this rejection.
         check(false, "Invalid memo");
     }
 }
@@ -2465,15 +2455,6 @@ ACTION atomicmarket::lognewrent(
     require_recipient(lister);
 }
 
-ACTION atomicmarket::logrentstart(
-    uint64_t asset_id,
-    name lister
-) {
-    require_auth(get_self());
-
-    require_recipient(lister);
-}
-
 ACTION atomicmarket::logrental(
     uint64_t rental_counter_id,
     uint64_t asset_id,
@@ -2542,6 +2523,7 @@ name atomicmarket::get_collection_and_check_assets(
 
 
     atomicassets::assets_t owner_assets = atomicassets::get_assets(owner);
+    atomicassets::leases_t aa_leases = atomicassets::get_leases();
 
     name assets_collection_name = name("");
     // All assets have to belong to the same collection, so the templates table only needs to
@@ -2552,6 +2534,12 @@ name atomicmarket::get_collection_and_check_assets(
         auto asset_itr = owner_assets.require_find(asset_id,
             ("The specified account does not own at least one of the assets - "
             + to_string(asset_id)).c_str());
+
+        // A rental-locked (leased or pre-titled) asset cannot be listed for sale, auction or
+        // buyoffer. Refuse it early here rather than letting it fail at settlement time. The
+        // AtomicAssets transfer/offer guards remain the authoritative backstop.
+        check(aa_leases.find(asset_id) == aa_leases.end(),
+            ("One of the assets is currently rented out (locked) - " + to_string(asset_id)).c_str());
 
         if (assets_collection_name == name("")) {
             assets_collection_name = asset_itr->collection_name;
