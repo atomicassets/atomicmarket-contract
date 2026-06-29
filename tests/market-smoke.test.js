@@ -726,6 +726,7 @@ describe('atomicmarket end to end', () => {
             asset_id: ASSET1,
             title_owner: 'seller',
             renter: 'renter',
+            rental_start: Number(rentals[0].rental_end) - 2 * 3600,
             rental_end: Number(rentals[0].rental_end),
             market: MARKET,
         }]);
@@ -803,6 +804,7 @@ describe('atomicmarket end to end', () => {
             asset_id: ASSET1,
             title_owner: 'seller',
             renter: 'renter2',
+            rental_start: Number(marketTables.rentals()[0].rental_end) - 1 * 3600,
             rental_end: Number(marketTables.rentals()[0].rental_end),
             market: MARKET,
         }]);
@@ -824,6 +826,34 @@ describe('atomicmarket end to end', () => {
         expect(aaTables.leases()).toEqual([]);
         expect(marketTables.rentals()).toEqual([]);
         expect(aaTables.assets('seller').length).toBe(2);
+    });
+
+    test('extensions are capped at the maximum duration measured from the lease start', async () => {
+        // listAndActivateRental lists with maximum_rental_duration = 86400s (24h)
+        await listAndActivateRental();
+        await deposit('renter', 20);
+
+        // rent 20h (start = T0, end = T0 + 20h)
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 20, WAX(0.5), 0, '',
+        ]).send('renter@active');
+        const end = Number(marketTables.rentals()[0].rental_end);
+
+        // advance 10h, still active. Extending by 5h would push the total to 25h
+        // from the lease start (> 24h) even though only 15h would remain from
+        // "now" - the from-start cap rejects it (a rolling-window cap would not).
+        blockchain.addTime(TimePoint.fromMilliseconds(10 * 3600 * 1000));
+        await expect(
+            atomicmarket.actions.rentasset([
+                'renter', ASSET1, 5, WAX(0.5), 0, '',
+            ]).send('renter@active')
+        ).rejects.toThrow(/maximum rental duration/);
+
+        // extending by 4h reaches exactly 24h from start, which is allowed
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 4, WAX(0.5), 0, '',
+        ]).send('renter@active');
+        expect(Number(marketTables.rentals()[0].rental_end)).toBe(end + 4 * 3600);
     });
 
     test('rental payouts respect royalty splits', async () => {

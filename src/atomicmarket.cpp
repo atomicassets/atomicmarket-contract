@@ -1991,7 +1991,13 @@ ACTION atomicmarket::rentasset(
     uint64_t base_time = is_extension ? (uint64_t) lease_itr->rental_end : (uint64_t) current_time;
     uint64_t new_rental_end = base_time + added_duration;
 
-    check(new_rental_end - current_time <= rental_itr->maximum_rental_duration,
+    // Cap the TOTAL rental period from when the lease was first opened, not from
+    // "now". Measuring from now would let a renter perpetually extend within a
+    // rolling window and hold the asset indefinitely, so the title owner could
+    // never get it back. For a fresh rental the start is now (added_duration);
+    // for an extension it is the lease's original rental_start.
+    uint64_t lease_start = is_extension ? (uint64_t) lease_itr->rental_start : (uint64_t) current_time;
+    check(new_rental_end - lease_start <= rental_itr->maximum_rental_duration,
         "The rental period would exceed the maximum rental duration of this listing");
 
     check(is_valid_marketplace(taker_marketplace), "The taker marketplace is not a valid marketplace");

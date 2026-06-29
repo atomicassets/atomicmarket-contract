@@ -640,6 +640,10 @@
                     "type": "name"
                 },
                 {
+                    "name": "rental_start",
+                    "type": "uint32"
+                },
+                {
                     "name": "rental_end",
                     "type": "uint32"
                 },
