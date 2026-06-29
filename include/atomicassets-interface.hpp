@@ -149,8 +149,8 @@ namespace atomicassets {
 
 
     // Non-custodial rental lock/title record. A row's existence means the asset
-    // is leased and locked; renter == name("") && rental_end == 0 is a pretitle
-    // sentinel (locked, owner still the lister).
+    // is actively leased and locked: the renter is the real owner and title_owner
+    // holds the reclaim right until rental_end.
     struct leases_s {
         uint64_t         asset_id;
         name             title_owner;

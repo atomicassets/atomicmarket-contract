@@ -1921,6 +1921,9 @@ ACTION atomicmarket::cancelrent(
     } else {
         // Not rented: the asset is still with the lister, nothing to return. Anyone may cancel an
         // invalid listing (the owner no longer owns the asset); otherwise the owner must authorize.
+        // Precondition: this non-custodial flow deploys with no legacy custodial rentals in flight
+        // (the asset is never escrowed in the contract), so "owner no longer owns it" here always
+        // means the lister moved/sold it, never that the contract holds an escrowed asset.
         atomicassets::assets_t owner_assets = atomicassets::get_assets(rental_itr->owner);
         bool is_rental_invalid = owner_assets.find(asset_id) == owner_assets.end();
 
@@ -2535,7 +2538,7 @@ name atomicmarket::get_collection_and_check_assets(
             ("The specified account does not own at least one of the assets - "
             + to_string(asset_id)).c_str());
 
-        // A rental-locked (leased or pre-titled) asset cannot be listed for sale, auction or
+        // A rental-locked (leased) asset cannot be listed for sale, auction or
         // buyoffer. Refuse it early here rather than letting it fail at settlement time. The
         // AtomicAssets transfer/offer guards remain the authoritative backstop.
         check(aa_leases.find(asset_id) == aa_leases.end(),
