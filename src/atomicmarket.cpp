@@ -2540,9 +2540,10 @@ name atomicmarket::get_collection_and_check_assets(
             ("The specified account does not own at least one of the assets - "
             + to_string(asset_id)).c_str());
 
-        // A rental-locked (leased) asset cannot be listed for sale, auction or
-        // buyoffer. Refuse it early here rather than letting it fail at settlement time. The
-        // AtomicAssets transfer/offer guards remain the authoritative backstop.
+        // A rental-locked (leased) asset cannot be listed by any caller of this helper:
+        // sale, auction, buyoffer, or a new rental listing. Refuse it early here rather than
+        // letting it fail at settlement time. The AtomicAssets transfer/offer guards remain
+        // the authoritative backstop.
         check(aa_leases.find(asset_id) == aa_leases.end(),
             ("One of the assets is currently rented out (locked) - " + to_string(asset_id)).c_str());
 
