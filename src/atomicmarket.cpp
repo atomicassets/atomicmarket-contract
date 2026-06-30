@@ -2088,11 +2088,14 @@ ACTION atomicmarket::endrent(
     auto rentals = get_rentals();
     rentals.require_find(asset_id, "No rental listing with this asset_id exists");
 
-    // AtomicAssets leases is the source of truth: a row means it's still rented; no row means a
-    // keeper already reclaimed it (nothing to do).
+    // AtomicAssets leases is the source of truth. No row means it was already reclaimed (by a keeper
+    // or otherwise), so endrent is a no-op - it is idempotent and safe to call again.
     atomicassets::leases_t aa_leases = atomicassets::get_leases();
     auto lease_itr = aa_leases.find(asset_id);
-    check(lease_itr != aa_leases.end(), "This asset is not currently rented out");
+    if (lease_itr == aa_leases.end()) {
+        return;
+    }
+
     check(lease_itr->rental_end <= current_time_point().sec_since_epoch(),
         "The rental period is not over yet");
 

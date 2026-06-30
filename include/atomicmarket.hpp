@@ -328,8 +328,9 @@ public:
         3. An extension by the same renter only bumps the lease end (leaseextend); no second
            ownership flip.
         4. After the rental period is over, the asset returns to the lister via the permissionless
-           AtomicAssets `reclaim` (a keeper, endrent, or cancelrent triggers it). atomicmarket's
-           endrent then resyncs its mirror row, making the listing rentable again.
+           AtomicAssets `reclaim` (a keeper, endrent, or cancelrent triggers it). The listing is
+           rentable again as soon as the lease row is gone; atomicmarket keeps no lock state of its
+           own (the AtomicAssets leases table is the single source of truth).
         5. The owner can cancel the listing whenever no rental is actively running (cancelrent);
            an expired-but-unreclaimed lease is reclaimed as part of the cancel.
     */
