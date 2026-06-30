@@ -74,6 +74,10 @@ describe('atomicmarket end to end', () => {
         await atomicassets.actions.init([]).send(`${AA}@active`);
         await atomicmarket.actions.init([]).send(`${MARKET}@active`);
 
+        // Leasing is opt-in in AtomicAssets (rentalcfg defaults to disabled); authorize
+        // this market so the non-custodial rental flow can drive leasestart/leaseextend.
+        await atomicassets.actions.setrentmkt([MARKET]).send(`${AA}@active`);
+
         await atomicmarket.actions.addconftoken(['eosio.token', '8,WAX']).send(`${MARKET}@active`);
 
         await mintTokens(token, 'WAX', 8, 1000000000, 10000, [buyer, renter, renter2]);
@@ -385,7 +389,7 @@ describe('atomicmarket end to end', () => {
         expect(balanceOf('fees.atomic')).toEqual([WAX(0.4)]);   // 2% of 20 WAX
         const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
         expect(sellerTokens).toEqual([{ balance: WAX(17.6) }]); // 88% of 20 WAX
-        expect(marketTables.rentals()[0].renter).toBe('renter');
+        expect(aaTables.leases()[0].renter).toBe('renter');
         // non-custodial: the renter is the real owner now
         expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
     });
@@ -697,12 +701,11 @@ describe('atomicmarket end to end', () => {
     test('full rental lifecycle: announce, rent, extend, expire, endrent, cancel', async () => {
         await listAndActivateRental();
 
-        let rentals = marketTables.rentals();
+        const rentals = marketTables.rentals();
         expect(rentals.length).toBe(1);
         expect(rentals[0].owner).toBe('seller');
-        expect(rentals[0].renter).toBe('');
 
-        // non-custodial: the asset is still the seller's until it's rented
+        // non-custodial: the asset is still the seller's until it's rented, and nothing is leased
         expect(aaTables.assets('seller').map((a) => a.asset_id)).toContain(ASSET1);
         expect(aaTables.assets(MARKET).length).toBe(0);
         expect(aaTables.leases()).toEqual([]);
@@ -713,19 +716,18 @@ describe('atomicmarket end to end', () => {
             'renter', ASSET1, 2, WAX(0.5), 0, '',
         ]).send('renter@active');
 
-        rentals = marketTables.rentals();
-        expect(rentals[0].renter).toBe('renter');
-
-        // the renter is now the REAL atomicassets owner, the asset is locked, and the lister's
-        // reclaim right is parked in the leases table
+        // the renter is now the REAL atomicassets owner, the asset is locked, and the lease row (the
+        // single source of truth for lock state) holds the lister's reclaim right
         expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
         expect(aaTables.assets('seller').map((a) => a.asset_id)).not.toContain(ASSET1);
-        expect(aaTables.leases()).toEqual([{
+        const leased = aaTables.leases();
+        expect(leased).toEqual([{
             asset_id: ASSET1,
             title_owner: 'seller',
             renter: 'renter',
-            rental_start: Number(rentals[0].rental_end) - 2 * 3600,
-            rental_end: Number(rentals[0].rental_end),
+            collection_name: COL,
+            rental_start: Number(leased[0].rental_end) - 2 * 3600,
+            rental_end: Number(leased[0].rental_end),
         }]);
 
         // payout: 1.0 WAX -> 2% fees.atomic, 10% author, 88% straight to the seller
@@ -753,23 +755,21 @@ describe('atomicmarket end to end', () => {
         ).rejects.toThrow(/not over yet/);
 
         // the same renter can extend (1 more hour = 0.5 WAX); no second ownership flip
-        const endBefore = Number(marketTables.rentals()[0].rental_end);
+        const endBefore = Number(aaTables.leases()[0].rental_end);
         await atomicmarket.actions.rentasset([
             'renter', ASSET1, 1, WAX(0.5), 0, '',
         ]).send('renter@active');
-        expect(Number(marketTables.rentals()[0].rental_end)).toBe(endBefore + 3600);
+        expect(Number(aaTables.leases()[0].rental_end)).toBe(endBefore + 3600);
         expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
 
         // jump past the rental end; anyone can wrap it up (endrent triggers the reclaim)
         blockchain.addTime(TimePoint.fromMilliseconds(4 * 3600 * 1000));
         await atomicmarket.actions.endrent([ASSET1]).send('renter2@active');
 
-        // asset returned to the lister; lock cleared; mirror reset
+        // asset returned to the lister; lock cleared; the listing stays (rentable again)
         expect(aaTables.leases()).toEqual([]);
         expect(aaTables.assets('seller').map((a) => a.asset_id)).toContain(ASSET1);
-        rentals = marketTables.rentals();
-        expect(rentals[0].renter).toBe('');
-        expect(Number(rentals[0].rental_end)).toBe(0);
+        expect(marketTables.rentals().length).toBe(1);
 
         // owner cancels the (now idle) listing
         await atomicmarket.actions.cancelrent([ASSET1]).send('seller@active');
@@ -796,14 +796,15 @@ describe('atomicmarket end to end', () => {
 
         expect(aaTables.assets('renter2').map((a) => a.asset_id)).toContain(ASSET1);
         expect(aaTables.assets('renter').map((a) => a.asset_id)).not.toContain(ASSET1);
-        expect(aaTables.leases()).toEqual([{
+        const leased = aaTables.leases();
+        expect(leased).toEqual([{
             asset_id: ASSET1,
             title_owner: 'seller',
             renter: 'renter2',
-            rental_start: Number(marketTables.rentals()[0].rental_end) - 1 * 3600,
-            rental_end: Number(marketTables.rentals()[0].rental_end),
+            collection_name: COL,
+            rental_start: Number(leased[0].rental_end) - 1 * 3600,
+            rental_end: Number(leased[0].rental_end),
         }]);
-        expect(marketTables.rentals()[0].renter).toBe('renter2');
     });
 
     test('cancelrent on an expired-but-not-ended rental reclaims the asset to the lister', async () => {
@@ -832,7 +833,7 @@ describe('atomicmarket end to end', () => {
         await atomicmarket.actions.rentasset([
             'renter', ASSET1, 20, WAX(0.5), 0, '',
         ]).send('renter@active');
-        const end = Number(marketTables.rentals()[0].rental_end);
+        const end = Number(aaTables.leases()[0].rental_end);
 
         // advance 10h, still active. Extending by 5h would push the total to 25h
         // from the lease start (> 24h) even though only 15h would remain from
@@ -848,7 +849,7 @@ describe('atomicmarket end to end', () => {
         await atomicmarket.actions.rentasset([
             'renter', ASSET1, 4, WAX(0.5), 0, '',
         ]).send('renter@active');
-        expect(Number(marketTables.rentals()[0].rental_end)).toBe(end + 4 * 3600);
+        expect(Number(aaTables.leases()[0].rental_end)).toBe(end + 4 * 3600);
     });
 
     test('rental payouts respect royalty splits', async () => {
@@ -866,6 +867,31 @@ describe('atomicmarket end to end', () => {
         expect(balanceOf('temproy1')).toEqual(['0.03333333 WAX']);
         expect(balanceOf('attrroy1')).toEqual(['0.03333333 WAX']);
         expect(balanceOf('author')).toEqual(['0.00000002 WAX']);
+    });
+
+    test('rental extension pays template/attribute royalties from the renter scope', async () => {
+        // Pins the asset_scope invariant for the EXTENSION branch (asset_scope = renter):
+        // by extension time the renter is the AA owner, so the royalty engine must read the
+        // asset's template_id/attributes from the renter's scope. If asset_scope were wrong
+        // (or the lease flip were reordered before payout), distribute_collection_fee would
+        // silently drop temproy1/attrroy1 and this test's doubled balances would fail.
+        await setupRoyaltySplits();
+        await listAndActivateRental();
+
+        await deposit('renter', 2);
+        // fresh rental (asset_scope = owner): 1.0 WAX
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 2, WAX(0.5), 0, '',
+        ]).send('renter@active');
+        // same-renter extension while still active (asset_scope = renter): another 1.0 WAX
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 2, WAX(0.5), 0, '',
+        ]).send('renter@active');
+
+        // template + attribute royalty recipients must be paid for BOTH payouts (2 x 0.03333333),
+        // proving the extension read the asset from the renter scope, not an empty one.
+        expect(balanceOf('temproy1')).toEqual(['0.06666666 WAX']);
+        expect(balanceOf('attrroy1')).toEqual(['0.06666666 WAX']);
     });
 
     test('rental payouts use the discounted fee at execution time', async () => {

@@ -636,6 +636,10 @@
                     "type": "name"
                 },
                 {
+                    "name": "collection_name",
+                    "type": "name"
+                },
+                {
                     "name": "rental_start",
                     "type": "uint32"
                 },

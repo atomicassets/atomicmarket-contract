@@ -676,25 +676,22 @@ private:
 
     typedef multi_index <name("tbuyoffers"), template_buyoffer_s> template_buyoffers_t;
 
+    // Immutable rental listing config. Lock state (renter, start/end, whether it's currently rented)
+    // is NOT mirrored here - the AtomicAssets leases table is the single source of truth for that.
     TABLE rentals_s {
         uint64_t asset_id;
         name     owner;                     // the listing creator; receives the rental payouts
-        name     renter;                    // the current renter; name("") when not rented out
         asset    price_per_hour;            // denoted in the listing symbol
         symbol   settlement_symbol;         // what the rental is actually paid in
         uint32_t maximum_rental_duration;   // seconds; the longest period a rental can cover
-        uint32_t rental_end;                // seconds since epoch; 0 when not rented out
         name     maker_marketplace;
         name     collection_name;
         double   collection_fee;
 
         uint64_t primary_key() const { return asset_id; };
-        uint64_t by_rental_end() const { return (uint64_t) rental_end; };
     };
 
-    typedef multi_index <name("rentals"), rentals_s,
-        indexed_by <name("rentalends"), const_mem_fun <rentals_s, uint64_t, &rentals_s::by_rental_end>>>
-    rentals_t;
+    typedef multi_index <name("rentals"), rentals_s> rentals_t;
 
     TABLE marketplaces_s {
         name marketplace_name;
@@ -860,6 +857,9 @@ private:
     void internal_decrease_balance(name owner, asset quantity);
 
     void internal_transfer_assets(name to, const vector <uint64_t> &asset_ids, const string &memo);
+
+    // Triggers the AtomicAssets permissionless reclaim (shared by rentasset, endrent and cancelrent).
+    void send_aa_reclaim(uint64_t asset_id);
 
 
 
