@@ -317,19 +317,22 @@ public:
     /*
         Rentals
 
-        Custodial rental flow:
-        1. The owner announces a rental listing (announcerent), specifying the price per hour,
-           the settlement symbol, and the maximum duration a single rental can cover
-        2. The owner transfers the asset to the atomicmarket contract with the memo "rental",
-           which activates the listing (the contract becomes the custodial owner)
-        3. A renter pays for a number of hours from their deposited balance (rentasset). The
+        Non-custodial rental flow (renter-as-owner):
+        1. The owner announces a rental listing (announcerent). The asset is NOT escrowed - it
+           stays fully owned and usable by the lister until it is actually rented.
+        2. A renter pays for a number of hours from their deposited balance (rentasset). The
            payment is distributed like a sale payout (market fees, collection fee / royalty
-           splits, remainder to the listing owner) and the atomicassets HOLDERSHIP of the
-           asset is moved to the renter, while ownership stays with the contract
-        4. After the rental period is over, anyone can reset the holdership back to the
-           contract (endrent), making the listing rentable again
-        5. The owner can cancel the listing and reclaim the asset whenever no rental is
-           actively running (cancelrent)
+           splits, remainder to the listing owner) and atomicmarket drives AtomicAssets to make
+           the RENTER the real owner of the asset (leasestart), parking the lister's reclaim
+           right in the AtomicAssets leases table. The asset is locked while leased.
+        3. An extension by the same renter only bumps the lease end (leaseextend); no second
+           ownership flip.
+        4. After the rental period is over, the asset returns to the lister via the permissionless
+           AtomicAssets `reclaim` (a keeper, endrent, or cancelrent triggers it). The listing is
+           rentable again as soon as the lease row is gone; atomicmarket keeps no lock state of its
+           own (the AtomicAssets leases table is the single source of truth).
+        5. The owner can cancel the listing whenever no rental is actively running (cancelrent);
+           an expired-but-unreclaimed lease is reclaimed as part of the cancel.
     */
 
     ACTION announcerent(
@@ -339,6 +342,13 @@ public:
         symbol settlement_symbol,
         uint32_t maximum_rental_duration,
         name maker_marketplace
+    );
+
+    ACTION editrent(
+        uint64_t asset_id,
+        asset new_price_per_hour,
+        uint32_t new_maximum_rental_duration,
+        name new_maker_marketplace
     );
 
     ACTION cancelrent(
@@ -468,20 +478,26 @@ public:
         double collection_fee
     );
 
-    ACTION logrentstart(
-        uint64_t asset_id,
-        name lister
-    );
-
     ACTION logrental(
-        uint64_t rental_counter_id,
+        uint64_t rental_id,
         uint64_t asset_id,
         name lister,
         name renter,
         uint32_t rental_hours,
         asset paid_settlement_price,
+        uint32_t rental_start,
         uint32_t rental_end,
+        bool is_extension,
         name taker_marketplace
+    );
+
+    ACTION logeditrent(
+        uint64_t asset_id,
+        name owner,
+        asset new_price_per_hour,
+        symbol settlement_symbol,
+        uint32_t new_maximum_rental_duration,
+        name new_maker_marketplace
     );
 
     /*
@@ -679,26 +695,22 @@ private:
 
     typedef multi_index <name("tbuyoffers"), template_buyoffer_s> template_buyoffers_t;
 
+    // Immutable rental listing config. Lock state (renter, start/end, whether it's currently rented)
+    // is NOT mirrored here - the AtomicAssets leases table is the single source of truth for that.
     TABLE rentals_s {
         uint64_t asset_id;
         name     owner;                     // the listing creator; receives the rental payouts
-        name     holder;                    // the current renter; name("") when not rented out
         asset    price_per_hour;            // denoted in the listing symbol
         symbol   settlement_symbol;         // what the rental is actually paid in
         uint32_t maximum_rental_duration;   // seconds; the longest period a rental can cover
-        uint32_t rental_end;                // seconds since epoch; 0 when not rented out
-        bool     asset_transferred;         // true once the asset is in contract custody
         name     maker_marketplace;
         name     collection_name;
         double   collection_fee;
 
         uint64_t primary_key() const { return asset_id; };
-        uint64_t by_rental_end() const { return (uint64_t) rental_end; };
     };
 
-    typedef multi_index <name("rentals"), rentals_s,
-        indexed_by <name("rentalends"), const_mem_fun <rentals_s, uint64_t, &rentals_s::by_rental_end>>>
-    rentals_t;
+    typedef multi_index <name("rentals"), rentals_s> rentals_t;
 
     TABLE marketplaces_s {
         name marketplace_name;
@@ -864,6 +876,9 @@ private:
     void internal_decrease_balance(name owner, asset quantity);
 
     void internal_transfer_assets(name to, const vector <uint64_t> &asset_ids, const string &memo);
+
+    // Triggers the AtomicAssets permissionless reclaim (shared by rentasset, endrent and cancelrent).
+    void send_aa_reclaim(uint64_t asset_id);
 
 
 

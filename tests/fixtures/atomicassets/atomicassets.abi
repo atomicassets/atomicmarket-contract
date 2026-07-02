@@ -601,7 +601,12 @@
             ]
         },
         {
-            "name": "holders_s",
+            "name": "init",
+            "base": "",
+            "fields": []
+        },
+        {
+            "name": "leaseextend",
             "base": "",
             "fields": [
                 {
@@ -609,19 +614,74 @@
                     "type": "uint64"
                 },
                 {
-                    "name": "holder",
-                    "type": "name"
-                },
-                {
-                    "name": "owner",
-                    "type": "name"
+                    "name": "rental_end",
+                    "type": "uint32"
                 }
             ]
         },
         {
-            "name": "init",
+            "name": "leases_s",
             "base": "",
-            "fields": []
+            "fields": [
+                {
+                    "name": "asset_id",
+                    "type": "uint64"
+                },
+                {
+                    "name": "title_owner",
+                    "type": "name"
+                },
+                {
+                    "name": "renter",
+                    "type": "name"
+                },
+                {
+                    "name": "collection_name",
+                    "type": "name"
+                },
+                {
+                    "name": "rental_start",
+                    "type": "uint32"
+                },
+                {
+                    "name": "rental_end",
+                    "type": "uint32"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
+                }
+            ]
+        },
+        {
+            "name": "leasestart",
+            "base": "",
+            "fields": [
+                {
+                    "name": "title_owner",
+                    "type": "name"
+                },
+                {
+                    "name": "renter",
+                    "type": "name"
+                },
+                {
+                    "name": "asset_id",
+                    "type": "uint64"
+                },
+                {
+                    "name": "rental_end",
+                    "type": "uint32"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
+                },
+                {
+                    "name": "memo",
+                    "type": "string"
+                }
+            ]
         },
         {
             "name": "locktemplate",
@@ -702,6 +762,40 @@
             ]
         },
         {
+            "name": "loglock",
+            "base": "",
+            "fields": [
+                {
+                    "name": "collection_name",
+                    "type": "name"
+                },
+                {
+                    "name": "asset_id",
+                    "type": "uint64"
+                },
+                {
+                    "name": "title_owner",
+                    "type": "name"
+                },
+                {
+                    "name": "renter",
+                    "type": "name"
+                },
+                {
+                    "name": "rental_start",
+                    "type": "uint32"
+                },
+                {
+                    "name": "rental_end",
+                    "type": "uint32"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
+                }
+            ]
+        },
+        {
             "name": "logmint",
             "base": "",
             "fields": [
@@ -744,36 +838,6 @@
                 {
                     "name": "immutable_template_data",
                     "type": "ATTRIBUTE_MAP"
-                }
-            ]
-        },
-        {
-            "name": "logmove",
-            "base": "",
-            "fields": [
-                {
-                    "name": "collection_name",
-                    "type": "name"
-                },
-                {
-                    "name": "owner",
-                    "type": "name"
-                },
-                {
-                    "name": "from",
-                    "type": "name"
-                },
-                {
-                    "name": "to",
-                    "type": "name"
-                },
-                {
-                    "name": "asset_ids",
-                    "type": "uint64[]"
-                },
-                {
-                    "name": "memo",
-                    "type": "string"
                 }
             ]
         },
@@ -864,6 +928,32 @@
                 {
                     "name": "new_ram_payer",
                     "type": "name"
+                }
+            ]
+        },
+        {
+            "name": "logreclaim",
+            "base": "",
+            "fields": [
+                {
+                    "name": "collection_name",
+                    "type": "name"
+                },
+                {
+                    "name": "asset_id",
+                    "type": "uint64"
+                },
+                {
+                    "name": "title_owner",
+                    "type": "name"
+                },
+                {
+                    "name": "renter",
+                    "type": "name"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
                 }
             ]
         },
@@ -980,32 +1070,6 @@
             ]
         },
         {
-            "name": "move",
-            "base": "",
-            "fields": [
-                {
-                    "name": "owner",
-                    "type": "name"
-                },
-                {
-                    "name": "from",
-                    "type": "name"
-                },
-                {
-                    "name": "to",
-                    "type": "name"
-                },
-                {
-                    "name": "asset_ids",
-                    "type": "uint64[]"
-                },
-                {
-                    "name": "memo",
-                    "type": "string"
-                }
-            ]
-        },
-        {
             "name": "offers_s",
             "base": "",
             "fields": [
@@ -1068,6 +1132,16 @@
             ]
         },
         {
+            "name": "reclaim",
+            "base": "",
+            "fields": [
+                {
+                    "name": "asset_id",
+                    "type": "uint64"
+                }
+            ]
+        },
+        {
             "name": "redtemplmax",
             "base": "",
             "fields": [
@@ -1124,6 +1198,20 @@
                 {
                     "name": "account_to_remove",
                     "type": "name"
+                }
+            ]
+        },
+        {
+            "name": "rentalcfg_s",
+            "base": "",
+            "fields": [
+                {
+                    "name": "rental_market",
+                    "type": "name"
+                },
+                {
+                    "name": "max_lease_seconds",
+                    "type": "uint32"
                 }
             ]
         },
@@ -1206,6 +1294,16 @@
             ]
         },
         {
+            "name": "setleasecap",
+            "base": "",
+            "fields": [
+                {
+                    "name": "max_lease_seconds",
+                    "type": "uint32"
+                }
+            ]
+        },
+        {
             "name": "setmarketfee",
             "base": "",
             "fields": [
@@ -1230,6 +1328,16 @@
                 {
                     "name": "asset_id",
                     "type": "uint64"
+                }
+            ]
+        },
+        {
+            "name": "setrentmkt",
+            "base": "",
+            "fields": [
+                {
+                    "name": "rental_market",
+                    "type": "name"
                 }
             ]
         },
@@ -1497,6 +1605,16 @@
             "ricardian_contract": ""
         },
         {
+            "name": "leaseextend",
+            "type": "leaseextend",
+            "ricardian_contract": ""
+        },
+        {
+            "name": "leasestart",
+            "type": "leasestart",
+            "ricardian_contract": ""
+        },
+        {
             "name": "locktemplate",
             "type": "locktemplate",
             "ricardian_contract": ""
@@ -1512,13 +1630,13 @@
             "ricardian_contract": ""
         },
         {
-            "name": "logmint",
-            "type": "logmint",
+            "name": "loglock",
+            "type": "loglock",
             "ricardian_contract": ""
         },
         {
-            "name": "logmove",
-            "type": "logmove",
+            "name": "logmint",
+            "type": "logmint",
             "ricardian_contract": ""
         },
         {
@@ -1534,6 +1652,11 @@
         {
             "name": "logrampayer",
             "type": "logrampayer",
+            "ricardian_contract": ""
+        },
+        {
+            "name": "logreclaim",
+            "type": "logreclaim",
             "ricardian_contract": ""
         },
         {
@@ -1557,13 +1680,13 @@
             "ricardian_contract": ""
         },
         {
-            "name": "move",
-            "type": "move",
+            "name": "payofferram",
+            "type": "payofferram",
             "ricardian_contract": ""
         },
         {
-            "name": "payofferram",
-            "type": "payofferram",
+            "name": "reclaim",
+            "type": "reclaim",
             "ricardian_contract": ""
         },
         {
@@ -1602,6 +1725,11 @@
             "ricardian_contract": ""
         },
         {
+            "name": "setleasecap",
+            "type": "setleasecap",
+            "ricardian_contract": ""
+        },
+        {
             "name": "setmarketfee",
             "type": "setmarketfee",
             "ricardian_contract": ""
@@ -1609,6 +1737,11 @@
         {
             "name": "setrampayer",
             "type": "setrampayer",
+            "ricardian_contract": ""
+        },
+        {
+            "name": "setrentmkt",
+            "type": "setrentmkt",
             "ricardian_contract": ""
         },
         {
@@ -1674,8 +1807,8 @@
             "key_types": []
         },
         {
-            "name": "holders",
-            "type": "holders_s",
+            "name": "leases",
+            "type": "leases_s",
             "index_type": "i64",
             "key_names": [],
             "key_types": []
@@ -1683,6 +1816,13 @@
         {
             "name": "offers",
             "type": "offers_s",
+            "index_type": "i64",
+            "key_names": [],
+            "key_types": []
+        },
+        {
+            "name": "rentalcfg",
+            "type": "rentalcfg_s",
             "index_type": "i64",
             "key_names": [],
             "key_types": []
