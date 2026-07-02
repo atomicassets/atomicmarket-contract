@@ -1,7 +1,7 @@
 # V2 Changes & Migration
 
 This page covers the V2.0 changes that affect existing users, integrators and indexers,
-beyond the two new feature sets ([Royalty Splits](Royalty-Splits), [Rentals](Rentals)).
+beyond the new feature set ([Royalty Splits](Royalty-Splits)).
 
 ## Single-asset listings (bundle removal)
 
@@ -31,7 +31,7 @@ regardless of the fee stored when the listing was created. Changing a collection
 AtomicAssets therefore takes effect immediately on **all existing listings** of the
 collection — both reductions (temporary, collection-wide promotion windows) *and* increases
 apply, giving the collection author full control over their fee. This applies to sales,
-auctions, both buyoffer types and rentals. The listing row still records the fee at listing
+auctions and both buyoffer types. The listing row still records the fee at listing
 time, but only for informational / indexing purposes — it no longer affects the payout.
 
 **Note for sellers:** because the fee is read at settlement, a collection author can raise
@@ -43,8 +43,7 @@ end may want to surface the live fee at the moment of sale.
 
 ## For indexers and API providers
 
-New tables: `royaltyconf`, `royaltytemp`, `royaltyattr` (see [Royalty Splits](Royalty-Splits)),
-`rentals` (see [Rentals](Rentals)).
+New tables: `royaltyconf`, `royaltytemp`, `royaltyattr` (see [Royalty Splits](Royalty-Splits)).
 
 New actions to index:
 
@@ -54,8 +53,6 @@ New actions to index:
   the logs of one settlement sum to exactly the collection fee, so royalty earnings can be
   indexed without re-implementing the split math. These actions notify no accounts; read
   them from action traces.
-- Rentals: `announcerent`, `cancelrent`, `rentasset`, `endrent`, `payrentram`, plus the
-  logs `lognewrent`, `logrentstart`, `logrental`
 - Note that rule ids in `logroyattr` are never reused (persistent counter), so they are
   stable keys for historical data.
 

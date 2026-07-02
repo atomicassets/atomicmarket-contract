@@ -1,5 +1,5 @@
 # AtomicMarket V2.0
-AtomicMarket is a marketplace to sell, auction and rent out [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs. V2.0 builds on the AtomicAssets V2.0 contract.
+AtomicMarket is a marketplace to sell and auction [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs. V2.0 builds on the AtomicAssets V2.0 contract.
 
 ### [Documentation can be found here.](docs/wiki/Home.md)
 
@@ -17,10 +17,6 @@ AtomicMarket is a marketplace to sell, auction and rent out [AtomicAssets](https
 - **NFTs do not have to be transferred for sales**
 
 	Instead of using transfers, AtomicAssets **offers** are used for sales. These offers are only accepted when someone buys the NFTs for sale. Therefore, sellers keep ownership over their NFTs while they are listed on the AtomicMarket.
-
-- **Custodial rentals**
-
-	Assets can be rented out per hour. The owner lists an asset and transfers it into contract custody; renters pay from their deposited balance and receive the AtomicAssets V2 *holdership* of the asset for the rental period, while ownership stays with the contract. Rental payments are distributed like sale payouts, including royalties.
 
 - **Royalty splits**
 

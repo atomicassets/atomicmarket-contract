@@ -754,28 +754,6 @@ This action may only be called with the permission of {{payer}}.
 
 
 
-<h1 class="contract">payrentram</h1>
-
----
-spec_version: "0.2.0"
-title: Pay for the RAM of a rental listing
-summary: '{{nowrap payer}} pays for the RAM of the rental listing for the asset {{nowrap asset_id}}'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-{{payer}} pays for the RAM associated with the table entry of the rental listing for the asset with the ID {{asset_id}}. The content of the table entry does not change.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called with the permission of {{payer}}.
-</div>
-
-
-
-
 <h1 class="contract">addbonusfee</h1>
 
 ---
@@ -877,7 +855,7 @@ icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CF
 <div class="description">
 The royalty split config of the collection {{collection_name}} is created or updated.
 
-When a sale, auction, buyoffer or rental of an asset belonging to {{collection_name}} settles, the collection fee share of the payment is divided between three categories, weighted {{split_founders}} (founders) : {{split_templates}} (templates) : {{split_attributes}} (attributes). Categories that have no payees for the settled asset are renormalized away, so the weights only need to be relative to each other.
+When a sale, auction or buyoffer of an asset belonging to {{collection_name}} settles, the collection fee share of the payment is divided between three categories, weighted {{split_founders}} (founders) : {{split_templates}} (templates) : {{split_attributes}} (attributes). Categories that have no payees for the settled asset are renormalized away, so the weights only need to be relative to each other.
 
 The founders category is distributed to the configured founders list, proportional to the configured weights.
 
@@ -1110,124 +1088,6 @@ This action may only be called with the permission of {{seller}}.
 
 
 
-<h1 class="contract">announcerent</h1>
-
----
-spec_version: "0.2.0"
-title: Announce a rental listing
-summary: '{{nowrap lister}} announces a rental listing for the asset {{nowrap asset_id}}'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-{{lister}} announces a rental listing for the asset with the ID {{asset_id}}.
-
-For this listing to become active, {{lister}} has to transfer the asset to the AtomicMarket account with the memo "rental". The AtomicMarket account then holds the asset in custody for the lifetime of the listing.
-
-The asset can be rented for {{price_per_hour}} per hour, settled in {{symbol_to_symbol_code settlement_symbol}}. A single rental (including extensions by the same renter) can cover at most {{maximum_rental_duration}} seconds.
-
-While the asset is rented out, the renter receives the AtomicAssets HOLDERSHIP of the asset; the ownership stays with the AtomicMarket account.
-
-{{#if maker_marketplace}}The marketplace with the name {{maker_marketplace}} facilitates this listing.
-{{else}}The default marketplace facilitates this listing.
-{{/if}}
-
-When the asset is rented, the marketplaces facilitating the listing and the rental, and the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists) each receive a share of the rental payment; the remainder is paid out to {{lister}}. The collection fee applied is the collection's fee at the time of a rental, regardless of whether it is higher or lower than at the time of this announcement.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called with the permission of {{lister}}.
-</div>
-
-
-
-
-<h1 class="contract">cancelrent</h1>
-
----
-spec_version: "0.2.0"
-title: Cancel a rental listing
-summary: 'The rental listing for the asset {{nowrap asset_id}} is cancelled'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-The rental listing for the asset with the ID {{asset_id}} is cancelled.
-
-A listing can only be cancelled while no rental is actively running. If the asset is in the custody of the AtomicMarket account, it is transferred back to the listing's owner. If an expired rental was never wrapped up via the endrent action, the holdership of the asset is reclaimed first.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called with the permission of the owner of the rental listing, unless the listing is not active and the owner no longer owns the asset (which makes the listing invalid), in which case anyone may call this action.
-</div>
-
-
-
-
-<h1 class="contract">rentasset</h1>
-
----
-spec_version: "0.2.0"
-title: Rent an asset
-summary: '{{nowrap renter}} rents the asset {{nowrap asset_id}} for {{nowrap rental_hours}} hours'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-{{renter}} rents the asset with the ID {{asset_id}} for {{rental_hours}} hours.
-
-If the price per hour of the listing differs from {{expected_price_per_hour}}, the transaction fails.
-
-The total rental price (price per hour times hours, converted to the listing's settlement symbol if the listing uses a delphi pairing, using the delphioracle median price {{intended_delphi_median}} where applicable) is deducted from {{renter}}'s balance.
-
-The marketplaces facilitating the listing and this rental, and the collection's royalty recipients (according to the collection's royalty split configuration, or the collection author if none exists) each get their share of the rental payment added to their balances; the remainder is paid out to the listing's owner. The collection fee applied is the collection's fee at the time of this rental, regardless of whether it is higher or lower than when the listing was created.
-
-{{renter}} receives the AtomicAssets HOLDERSHIP of the asset until the end of the rental period; the ownership stays with the AtomicMarket account. The rental period does not renew automatically.
-
-If {{renter}} already holds an active rental for this asset, the purchased hours extend the current rental period instead. The combined remaining period must stay within the listing's maximum rental duration.
-
-{{#if taker_marketplace}}The marketplace with the name {{taker_marketplace}} facilitates this rental.
-{{else}}The default marketplace facilitates this rental.
-{{/if}}
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called with the permission of {{renter}}.
-</div>
-
-
-
-
-<h1 class="contract">endrent</h1>
-
----
-spec_version: "0.2.0"
-title: Wrap up an expired rental
-summary: 'The expired rental of the asset {{nowrap asset_id}} is wrapped up'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-The rental period of the asset with the ID {{asset_id}} is over, and the AtomicAssets holdership of the asset is moved from the renter back to the AtomicMarket account, making the listing rentable again.
-
-This action has no effect other than resetting an expired rental back to its listed state.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may be called by anyone.
-</div>
-
-
-
-
 <h1 class="contract">lognewsale</h1>
 
 ---
@@ -1350,72 +1210,6 @@ icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CF
 <b>Description:</b>
 <div class="description">
 Logs that the auction with the ID {{auction_id}} has become active. This action is only used for notification purposes and has no effect on any state.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called by the AtomicMarket contract itself.
-</div>
-
-
-
-
-<h1 class="contract">lognewrent</h1>
-
----
-spec_version: "0.2.0"
-title: Log a new rental listing
-summary: 'Logs the creation of the rental listing for the asset {{nowrap asset_id}}'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-Logs the creation of the rental listing for the asset with the ID {{asset_id}}. This action is only used for notification purposes and has no effect on any state.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called by the AtomicMarket contract itself.
-</div>
-
-
-
-
-<h1 class="contract">logrentstart</h1>
-
----
-spec_version: "0.2.0"
-title: Log a rental listing becoming active
-summary: 'Logs that the rental listing for the asset {{nowrap asset_id}} has become active'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-Logs that the rental listing for the asset with the ID {{asset_id}} has become active (the asset has been transferred into the custody of the AtomicMarket account). This action is only used for notification purposes and has no effect on any state.
-</div>
-
-<b>Clauses:</b>
-<div class="clauses">
-This action may only be called by the AtomicMarket contract itself.
-</div>
-
-
-
-
-<h1 class="contract">logrental</h1>
-
----
-spec_version: "0.2.0"
-title: Log an executed rental
-summary: 'Logs that {{nowrap renter}} rented the asset {{nowrap asset_id}}'
-icon: https://atomicassets.io/image/logo256.png#108AEE3530F4EB368A4B0C28800894CFBABF46534F48345BF6453090554C52D5
----
-
-<b>Description:</b>
-<div class="description">
-Logs that {{renter}} rented the asset with the ID {{asset_id}} from {{lister}} for {{rental_hours}} hours, paying {{paid_settlement_price}}. The rental period ends at {{rental_end}} (seconds since epoch). This action is only used for notification purposes and has no effect on any state.
 </div>
 
 <b>Clauses:</b>

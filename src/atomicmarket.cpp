@@ -484,8 +484,8 @@ ACTION atomicmarket::withdraw(
 /**
 * Creates or updates the royalty split config for a collection
 *
-* The founders category is a list of global recipients that applies to every sale / rental of
-* the collection. The three split weights determine how the collection fee is divided between
+* The founders category is a list of global recipients that applies to every settlement
+* (sale, auction, buyoffer) of the collection. The three split weights determine how the collection fee is divided between
 * the founders, template and attribute categories. Categories without payees at settlement
 * time are renormalized away, so the weights only need to be relative to each other.
 *
@@ -641,7 +641,7 @@ ACTION atomicmarket::deltemplroy(
 /**
 * Creates or updates an attribute royalty rule for a collection
 *
-* A rule matches when an asset that is sold / rented has an attribute with the exact
+* A rule matches when a settled asset (sale, auction, buyoffer) has an attribute with the exact
 * (source, field, value) triple of the rule. The value's type is part of the match -
 * uint32_t(5) and int32_t(5) are different keys. If a rule for the exact triple already
 * exists, its weight and recipients are updated instead of a new rule being created.
@@ -1795,326 +1795,6 @@ ACTION atomicmarket::fulfilltbuyo(
 
 
 /**
-* Create a rental listing for a single asset
-* For the listing to become active, the lister needs to use the atomicassets transfer action to
-* transfer the asset to the atomicmarket contract with the memo "rental"
-*
-* price_per_hour is denoted in the listing symbol; if it differs from the settlement symbol, a
-* delphi symbol pair has to be configured and the rental is paid in the settlement symbol at the
-* exchange rate at the time of renting
-*
-* maximum_rental_duration is in seconds and is the longest period a single rental (including
-* extensions by the same renter) can cover
-*
-* @required_auth lister
-*/
-ACTION atomicmarket::announcerent(
-    name lister,
-    uint64_t asset_id,
-    asset price_per_hour,
-    symbol settlement_symbol,
-    uint32_t maximum_rental_duration,
-    name maker_marketplace
-) {
-    require_auth(lister);
-
-    check(price_per_hour.is_valid(), "Invalid type price_per_hour");
-    check(settlement_symbol.is_valid(), "Invalid type settlement_symbol");
-
-    check(price_per_hour.amount > 0, "The price per hour must be greater than zero");
-
-    check(maximum_rental_duration >= 3600,
-        "The maximum rental duration must be at least one hour (3600 seconds)");
-    check(maximum_rental_duration <= 2419200,
-        "The maximum rental duration can't be longer than 28 days");
-
-    name assets_collection_name = get_collection_and_check_assets(lister, vector <uint64_t> {asset_id});
-
-    auto rentals = get_rentals();
-    check(rentals.find(asset_id) == rentals.end(),
-        "A rental listing for this asset already exists");
-
-    if (price_per_hour.symbol == settlement_symbol) {
-        check(is_symbol_supported(price_per_hour.symbol), "The specified listing symbol is not supported.");
-    } else {
-        check(is_symbol_pair_supported(price_per_hour.symbol, settlement_symbol),
-            "The specified listing - settlement symbol combination is not supported");
-    }
-
-    check(is_valid_marketplace(maker_marketplace), "The maker marketplace is not a valid marketplace");
-
-    double collection_fee = get_collection_fee(assets_collection_name);
-    check(collection_fee <= atomicassets::MAX_MARKET_FEE,
-        "The collection fee is too high. This should have been prevented by the atomicassets contract");
-
-    rentals.emplace(lister, [&](auto &_rental) {
-        _rental.asset_id = asset_id;
-        _rental.owner = lister;
-        _rental.holder = name("");
-        _rental.price_per_hour = price_per_hour;
-        _rental.settlement_symbol = settlement_symbol;
-        _rental.maximum_rental_duration = maximum_rental_duration;
-        _rental.rental_end = 0;
-        _rental.asset_transferred = false;
-        _rental.maker_marketplace = maker_marketplace;
-        _rental.collection_name = assets_collection_name;
-        _rental.collection_fee = collection_fee;
-    });
-
-    action(
-        permission_level{get_self(), name("active")},
-        get_self(),
-        name("lognewrent"),
-        make_tuple(
-            asset_id,
-            lister,
-            price_per_hour,
-            settlement_symbol,
-            maximum_rental_duration,
-            maker_marketplace,
-            assets_collection_name,
-            collection_fee
-        )
-    ).send();
-}
-
-
-/**
-* Cancels a rental listing
-*
-* If the listing is not active yet, it can be cancelled by the owner - or by anyone if the
-* owner does not own the asset anymore (which makes the listing invalid)
-*
-* If the listing is active (the asset is in contract custody), it can only be cancelled by the
-* owner and only while no rental is actively running. The asset is then transferred back
-*
-* @required_auth The listing's owner (see above for the invalid listing exception)
-*/
-ACTION atomicmarket::cancelrent(
-    uint64_t asset_id
-) {
-    auto rentals = get_rentals();
-    auto rental_itr = rentals.require_find(asset_id,
-        "No rental listing with this asset_id exists");
-
-    if (!rental_itr->asset_transferred) {
-        atomicassets::assets_t owner_assets = atomicassets::get_assets(rental_itr->owner);
-        bool is_rental_invalid = owner_assets.find(asset_id) == owner_assets.end();
-
-        check(is_rental_invalid || has_auth(rental_itr->owner),
-            "The rental listing is not invalid, therefore the authorization of the owner is needed to cancel it");
-
-        rentals.erase(rental_itr);
-        return;
-    }
-
-    require_auth(rental_itr->owner);
-
-    check(rental_itr->holder == name("") ||
-          rental_itr->rental_end <= current_time_point().sec_since_epoch(),
-        "The asset is currently rented out. The listing can only be cancelled after the rental period is over");
-
-    if (rental_itr->holder != name("")) {
-        // The rental period is over but the holdership was never reset via endrent.
-        // It needs to be reclaimed BEFORE the asset is transferred back, otherwise the
-        // holders table row would survive the transfer
-        action(
-            permission_level{get_self(), name("active")},
-            atomicassets::ATOMICASSETS_ACCOUNT,
-            name("move"),
-            make_tuple(
-                get_self(),
-                rental_itr->holder,
-                get_self(),
-                vector <uint64_t> {asset_id},
-                string("AtomicMarket Rental Ended")
-            )
-        ).send();
-    }
-
-    internal_transfer_assets(
-        rental_itr->owner,
-        vector <uint64_t> {asset_id},
-        "AtomicMarket Cancelled Rental Listing - Asset ID # " + to_string(asset_id)
-    );
-
-    rentals.erase(rental_itr);
-}
-
-
-/**
-* Rents an asset for the specified number of hours
-*
-* The total price (price per hour x hours, converted to the settlement symbol if the listing
-* uses a delphi pairing) is deducted from the renter's balance and paid out like a sale payout
-* (market fees, collection fee / royalty splits, remainder to the listing owner)
-*
-* The atomicassets HOLDERSHIP of the asset is moved to the renter until the rental period is
-* over, while the ownership stays with the atomicmarket contract
-*
-* If the renter already holds an active rental for this asset, the new hours extend the
-* current rental period instead (the combined remaining period must stay within the listing's
-* maximum rental duration)
-*
-* @required_auth renter
-*/
-ACTION atomicmarket::rentasset(
-    name renter,
-    uint64_t asset_id,
-    uint32_t rental_hours,
-    asset expected_price_per_hour,
-    uint64_t intended_delphi_median,
-    name taker_marketplace
-) {
-    require_auth(renter);
-
-    check(expected_price_per_hour.is_valid(), "Invalid type expected_price_per_hour");
-
-    auto rentals = get_rentals();
-    auto rental_itr = rentals.require_find(asset_id,
-        "No rental listing with this asset_id exists");
-
-    check(rental_itr->asset_transferred,
-        "This rental listing is not active yet. The owner first has to transfer the asset to the atomicmarket account");
-
-    check(renter != rental_itr->owner, "You can't rent your own asset");
-
-    check(rental_itr->price_per_hour == expected_price_per_hour,
-        "The price per hour of this listing differs from the expected price per hour");
-
-    check(rental_hours > 0, "rental_hours must be at least 1");
-
-    uint32_t current_time = current_time_point().sec_since_epoch();
-
-    bool has_active_rental = rental_itr->holder != name("") && rental_itr->rental_end > current_time;
-    bool is_extension = has_active_rental && rental_itr->holder == renter;
-
-    check(!has_active_rental || is_extension,
-        "This asset is currently rented out. It can be rented again once the current rental period is over");
-
-    uint64_t added_duration = (uint64_t) rental_hours * 3600;
-    uint64_t new_rental_end = (uint64_t)(is_extension ? rental_itr->rental_end : current_time) + added_duration;
-
-    check(new_rental_end - current_time <= rental_itr->maximum_rental_duration,
-        "The rental period would exceed the maximum rental duration of this listing");
-
-    check(is_valid_marketplace(taker_marketplace), "The taker marketplace is not a valid marketplace");
-
-    __uint128_t total_listing_amount = (__uint128_t) rental_itr->price_per_hour.amount * rental_hours;
-    check(total_listing_amount <= (__uint128_t) asset::max_amount, "The total rental price is too large");
-
-    asset listing_price = asset((int64_t) total_listing_amount, rental_itr->price_per_hour.symbol);
-
-    asset settlement_price = calc_settlement_price(
-        listing_price,
-        rental_itr->settlement_symbol,
-        intended_delphi_median
-    );
-    check(settlement_price.amount > 0, "The total rental price must be greater than zero");
-
-    internal_decrease_balance(renter, settlement_price);
-
-    uint64_t rental_counter_id = consume_counter(name("rental"));
-
-    internal_payout_sale(
-        settlement_price,
-        rental_itr->owner,
-        rental_itr->maker_marketplace,
-        taker_marketplace,
-        rental_itr->collection_name,
-        vector <uint64_t> {asset_id},
-        get_self(), // the asset is in contract custody
-        name("rental"),
-        rental_counter_id,
-        "AtomicMarket Rental Payout - ID #" + to_string(rental_counter_id)
-    );
-
-    if (!is_extension) {
-        // Move the holdership to the renter. If a previous rental expired without endrent
-        // being called, the holdership still sits with the previous renter and is moved
-        // directly from them; otherwise it is moved from the contract itself
-        name move_from = rental_itr->holder == name("") ? get_self() : rental_itr->holder;
-
-        if (move_from != renter) {
-            action(
-                permission_level{get_self(), name("active")},
-                atomicassets::ATOMICASSETS_ACCOUNT,
-                name("move"),
-                make_tuple(
-                    get_self(),
-                    move_from,
-                    renter,
-                    vector <uint64_t> {asset_id},
-                    string("AtomicMarket Rental - ID # ") + to_string(rental_counter_id)
-                )
-            ).send();
-        }
-    }
-
-    rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
-        _rental.holder = renter;
-        _rental.rental_end = (uint32_t) new_rental_end;
-    });
-
-    action(
-        permission_level{get_self(), name("active")},
-        get_self(),
-        name("logrental"),
-        make_tuple(
-            rental_counter_id,
-            asset_id,
-            rental_itr->owner,
-            renter,
-            rental_hours,
-            settlement_price,
-            (uint32_t) new_rental_end,
-            taker_marketplace
-        )
-    ).send();
-}
-
-
-/**
-* Wraps up an expired rental by moving the holdership of the asset back to the atomicmarket
-* contract, making the listing rentable again
-*
-* This can be called by anyone - it only resets an expired rental back to its listed state
-*
-* @required_auth None
-*/
-ACTION atomicmarket::endrent(
-    uint64_t asset_id
-) {
-    auto rentals = get_rentals();
-    auto rental_itr = rentals.require_find(asset_id,
-        "No rental listing with this asset_id exists");
-
-    check(rental_itr->holder != name(""), "This asset is not currently rented out");
-
-    check(rental_itr->rental_end <= current_time_point().sec_since_epoch(),
-        "The rental period is not over yet");
-
-    action(
-        permission_level{get_self(), name("active")},
-        atomicassets::ATOMICASSETS_ACCOUNT,
-        name("move"),
-        make_tuple(
-            get_self(),
-            rental_itr->holder,
-            get_self(),
-            vector <uint64_t> {asset_id},
-            string("AtomicMarket Rental Ended")
-        )
-    ).send();
-
-    rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
-        _rental.holder = name("");
-        _rental.rental_end = 0;
-    });
-}
-
-
-/**
 * Pays the RAM cost for an already existing sale
 */
 ACTION atomicmarket::paysaleram(
@@ -2184,29 +1864,6 @@ ACTION atomicmarket::paybuyoram(
 
 
 /**
-* Pays the RAM cost for an already existing rental listing
-*/
-ACTION atomicmarket::payrentram(
-    name payer,
-    uint64_t asset_id
-) {
-    require_auth(payer);
-
-    auto rentals = get_rentals();
-    auto rental_itr = rentals.require_find(asset_id,
-        "No rental listing with this asset_id exists");
-
-    rentals_s rental_copy = *rental_itr;
-
-    rentals.erase(rental_itr);
-
-    rentals.emplace(payer, [&](auto &_rental) {
-        _rental = rental_copy;
-    });
-}
-
-
-/**
 * This function is called when a transfer receipt from any token contract is sent to the atomicmarket contract
 * It handels deposits and adds the transferred tokens to the sender's balance table row
 */
@@ -2227,7 +1884,7 @@ void atomicmarket::receive_token_transfer(name from, name to, asset quantity, co
 
 /**
 * This function is called when a "transfer" action receipt from the atomicassets contract is sent to the atomicmarket
-* contract. It handles receiving assets for auctions and rentals.
+* contract. It handles receiving assets for auctions.
 */
 void atomicmarket::receive_asset_transfer(
     name from,
@@ -2279,35 +1936,6 @@ void atomicmarket::receive_asset_transfer(
                 auction_itr->auction_id
             )
         ).send();
-
-    } else if (memo == "rental") {
-        auto rentals = get_rentals();
-
-        for (uint64_t asset_id : asset_ids) {
-            auto rental_itr = rentals.require_find(asset_id,
-                ("No rental listing exists for one of the transferred assets - " + to_string(asset_id)).c_str());
-
-            check(rental_itr->owner == from,
-                ("A rental listing for this asset exists, but it belongs to another account - "
-                + to_string(asset_id)).c_str());
-
-            check(!rental_itr->asset_transferred,
-                ("The asset for this rental listing has already been transferred - " + to_string(asset_id)).c_str());
-
-            rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
-                _rental.asset_transferred = true;
-            });
-
-            action(
-                permission_level{get_self(), name("active")},
-                get_self(),
-                name("logrentstart"),
-                make_tuple(
-                    asset_id,
-                    from
-                )
-            ).send();
-        }
 
     } else {
         check(false, "Invalid memo");
@@ -2448,46 +2076,6 @@ ACTION atomicmarket::logauctstart(
     uint64_t auction_id
 ) {
     require_auth(get_self());
-}
-
-ACTION atomicmarket::lognewrent(
-    uint64_t asset_id,
-    name lister,
-    asset price_per_hour,
-    symbol settlement_symbol,
-    uint32_t maximum_rental_duration,
-    name maker_marketplace,
-    name collection_name,
-    double collection_fee
-) {
-    require_auth(get_self());
-
-    require_recipient(lister);
-}
-
-ACTION atomicmarket::logrentstart(
-    uint64_t asset_id,
-    name lister
-) {
-    require_auth(get_self());
-
-    require_recipient(lister);
-}
-
-ACTION atomicmarket::logrental(
-    uint64_t rental_counter_id,
-    uint64_t asset_id,
-    name lister,
-    name renter,
-    uint32_t rental_hours,
-    asset paid_settlement_price,
-    uint32_t rental_end,
-    name taker_marketplace
-) {
-    require_auth(get_self());
-
-    require_recipient(lister);
-    require_recipient(renter);
 }
 
 // The royalty distribution logs intentionally notify nobody (see the header comment):
@@ -3005,7 +2593,7 @@ void atomicmarket::internal_payout_sale(
     // Collection fee - the fee at EXECUTION time ALWAYS applies, regardless of the fee that
     // was stored when the listing was created. This gives the collection author full control:
     // both fee reductions and fee raises take effect immediately on every already-created
-    // listing (sales, auctions and rentals alike). The stored collection_fee is retained only
+    // listing (sales, auctions and buyoffers alike). The stored collection_fee is retained only
     // for informational / indexing purposes (emitted by the lognew* actions) and no longer
     // influences the payout.
     // The same partial read also provides the author for the royalty distribution.

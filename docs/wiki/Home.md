@@ -1,6 +1,6 @@
 # AtomicMarket V2.0
 
-AtomicMarket is a marketplace smart contract for selling, auctioning and renting out
+AtomicMarket is a marketplace smart contract for selling and auctioning
 [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs on Antelope chains.
 V2.0 builds on the AtomicAssets V2.0 contract.
 
@@ -9,14 +9,13 @@ V2.0 builds on the AtomicAssets V2.0 contract.
 | Feature | Summary | Details |
 |---|---|---|
 | **Royalty splits** | The collection fee can be distributed across weighted founders, per-template recipients, and attribute-matching rules instead of going entirely to the collection author | [Royalty Splits](Royalty-Splits) |
-| **Custodial rentals** | Assets can be rented out per hour; renters receive the AtomicAssets *holdership* while ownership stays in contract custody | [Rentals](Rentals) |
 | **Single-asset listings** | Every sale, auction and buyoffer contains exactly one asset; bundle listings were removed | [V2 Changes](V2-Changes) |
 | **Execution-time collection fee** | Settlements apply the collection's fee at execution time, so author fee changes — down *or* up — take effect immediately on all existing listings | [V2 Changes](V2-Changes) |
 | **CPU optimizations** | Lazy table construction, per-action config caching, size-capped raw reads of the collections table | [V2 Changes](V2-Changes) |
 
 ## Core concepts (unchanged from V1)
 
-- **Deposits**: buyers and renters pay from a deposited balance. Transfer any supported token
+- **Deposits**: buyers pay from a deposited balance. Transfer any supported token
   to the market account with the memo `deposit`; withdraw any time with the `withdraw` action.
 - **Sales**: `announcesale`, then activate by creating an AtomicAssets trade offer to the
   market account with the memo `sale`. Purchased with `purchasesale`.
@@ -27,12 +26,12 @@ V2.0 builds on the AtomicAssets V2.0 contract.
   marketplaces of a settlement each receive a configurable share (1% by default).
 - **Delphi pricing**: listings can be priced in one symbol (e.g. USD) and settled in another
   (e.g. WAX) at the [delphioracle](https://github.com/eostitan/delphioracle) exchange rate at
-  execution time. This works for sales **and rentals** in V2.
+  execution time.
 
 ## Settlement payout order
 
-Every settlement (sale purchase, auction seller claim, buyoffer acceptance/fulfillment,
-rental) distributes the payment as follows:
+Every settlement (sale purchase, auction seller claim, buyoffer acceptance/fulfillment)
+distributes the payment as follows:
 
 1. Maker marketplace fee (default 1%)
 2. Taker marketplace fee (default 1%)

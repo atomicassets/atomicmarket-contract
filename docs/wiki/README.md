@@ -13,5 +13,5 @@ cd /tmp/market-wiki
 git add -A && git commit -m "Sync wiki from docs/wiki" && git push
 ```
 
-Page links between the files use wiki-style page names (e.g. `[Rentals](Rentals)`), which
+Page links between the files use wiki-style page names (e.g. `[Royalty Splits](Royalty-Splits)`), which
 resolve on the GitHub wiki. When viewing these files inside the repo, append `.md` mentally.
