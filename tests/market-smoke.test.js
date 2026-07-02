@@ -394,6 +394,39 @@ describe('atomicmarket end to end', () => {
         expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
     });
 
+    test('delphi-priced rental extension settles the added hours at the oracle rate', async () => {
+        await setupDelphiPair();
+
+        await atomicmarket.actions.announcerent([
+            'seller', ASSET1, '0.50 USD', '8,WAX', 86400, '',
+        ]).send('seller@active');
+
+        await deposit('renter', 40);
+
+        // fresh rental: 2h x 0.50 USD = 1.00 USD = 20 WAX (leasestart path)
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 2, '0.50 USD', 500, '',
+        ]).send('renter@active');
+        const endAfterRent = Number(aaTables.leases()[0].rental_end);
+
+        // same renter extends by 2h while active: exercises the leaseextend inline path under
+        // settlement conversion (another 1.00 USD = 20 WAX), no second ownership flip
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 2, '0.50 USD', 500, '',
+        ]).send('renter@active');
+
+        // lease end advanced by the added hours; renter is still the real owner (no re-lease)
+        expect(Number(aaTables.leases()[0].rental_end)).toBe(endAfterRent + 2 * 3600);
+        expect(aaTables.leases()[0].renter).toBe('renter');
+        expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
+
+        // both payouts settled in WAX at the oracle rate (2 x 20 WAX total)
+        expect(balanceOf('author')).toEqual([WAX(4)]);          // 10% of 40 WAX
+        expect(balanceOf('fees.atomic')).toEqual([WAX(0.8)]);   // 2% of 40 WAX
+        const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
+        expect(sellerTokens).toEqual([{ balance: WAX(35.2) }]); // 88% of 40 WAX
+    });
+
     test('lowering the collection fee after listing discounts the executed sale', async () => {
         await listAndActivateSale([ASSET1], 1);
         await deposit('buyer', 1);
@@ -779,6 +812,32 @@ describe('atomicmarket end to end', () => {
         expect(aaTables.assets('seller').length).toBe(2); // ASSET1 + ASSET2
     });
 
+    test('endrent is idempotent: a second call after the reclaim is a no-op', async () => {
+        await listAndActivateRental();
+
+        await deposit('renter', 1);
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 1, WAX(0.5), 0, '',
+        ]).send('renter@active');
+
+        // expire, then wrap up once: the first endrent reclaims (lease cleared, asset back to lister)
+        blockchain.addTime(TimePoint.fromMilliseconds(2 * 3600 * 1000));
+        await atomicmarket.actions.endrent([ASSET1]).send('renter2@active');
+        expect(aaTables.leases()).toEqual([]);
+        expect(marketTables.rentals().length).toBe(1);
+
+        // a second endrent finds no lease to reclaim - it must no-op, not throw (a keeper reclaim
+        // followed by an endrent, or two endrent calls racing, must not brick).
+        await expect(
+            atomicmarket.actions.endrent([ASSET1]).send('renter2@active')
+        ).resolves.not.toThrow();
+
+        // state unchanged: still no lease, listing still present, asset still with the lister
+        expect(aaTables.leases()).toEqual([]);
+        expect(marketTables.rentals().length).toBe(1);
+        expect(aaTables.assets('seller').map((a) => a.asset_id)).toContain(ASSET1);
+    });
+
     test('renting after expiry without endrent re-leases from the old renter to the new one', async () => {
         await listAndActivateRental();
 
@@ -921,6 +980,28 @@ describe('atomicmarket end to end', () => {
         expect(aaTables.leases()).toEqual([]);
         expect(marketTables.rentals()).toEqual([]);
         expect(aaTables.assets('seller').length).toBe(2);
+    });
+
+    test('an invalid rental listing (owner moved the asset) can be cancelled by anyone', async () => {
+        await listAndActivateRental(); // announce only - never rented, so no lease row
+
+        // the lister moves the asset out of band; the listing is now invalid (owner no longer owns it)
+        await atomicassets.actions.transfer([
+            'seller', 'buyer', [ASSET1], 'moved after announcing',
+        ]).send('seller@active');
+
+        // a third party (not the owner) may cancel the invalid listing
+        await atomicmarket.actions.cancelrent([ASSET1]).send('renter2@active');
+        expect(marketTables.rentals()).toEqual([]);
+
+        // a still-valid listing, by contrast, needs the owner's authorization to cancel
+        await atomicassets.actions.transfer([
+            'buyer', 'seller', [ASSET1], 'return',
+        ]).send('buyer@active');
+        await listAndActivateRental();
+        await expect(
+            atomicmarket.actions.cancelrent([ASSET1]).send('renter2@active')
+        ).rejects.toThrow(/authorization of the owner is needed/);
     });
 
     test('extensions are capped at the maximum duration measured from the lease start', async () => {
