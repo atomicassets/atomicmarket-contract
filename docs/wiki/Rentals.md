@@ -12,7 +12,8 @@ it to the lister at expiry. The asset is **never escrowed** in the market contra
 ```
 announcerent ──> rentasset ──> [extensions] ──> expiry ──> endrent / reclaim ──┐
      │           (renter = owner, locked)                   (returned, listed again)│
-     └──────────────────────── cancelrent (when no active rental) <────────────────┘
+     ├── editrent (reprice / re-bound, any time)                                    │
+     └── cancelrent (delist, any time; reclaim-if-expired) <────────────────────────┘
 ```
 
 1. **List** — the owner announces the listing with its terms. The asset stays in the owner's account;
@@ -60,39 +61,56 @@ announcerent ──> rentasset ──> [extensions] ──> expiry ──> endre
 
 3. **Extend** — the *current* renter can call `rentasset` again while their rental is active; the
    purchased hours are appended to the current period. The combined period, measured from the lease's
-   original start, must stay within `maximum_rental_duration`. Rentals never renew automatically.
+   original start, must stay within `maximum_rental_duration`. An extension is a fresh purchase of
+   the listing's **current** terms (see `editrent`). Rentals never renew automatically.
 
-4. **Wrap up** — after `rental_end`, **anyone** may call `endrent(asset_id)`, which triggers the
+4. **Edit** — the owner can change the price, maximum duration and maker marketplace with
+   `editrent` at **any** time, including while a lease runs: the listing row is the owner's offer
+   of *future* rentals, separate from the renter's already-purchased lease (which is untouched).
+   The listing and settlement symbols cannot change — cancel and relist for that. Renters are
+   protected against repricing races by `expected_price_per_hour`.
+
+5. **Wrap up** — after `rental_end`, **anyone** may call `endrent(asset_id)`, which triggers the
    permissionless AtomicAssets `reclaim`: it returns the asset to the lister and clears the lock,
    making the listing rentable again. `endrent` is idempotent — a second call once the asset is
-   already reclaimed is a no-op. If nobody calls it, the next `rentasset` reclaims the expired lease
-   and re-leases to the new renter in the same transaction.
+   already reclaimed is a no-op — and purely lease-driven, so it works even for delisted leases.
+   If nobody calls it, the next `rentasset` reclaims the expired lease and re-leases to the new
+   renter in the same transaction. Until someone reclaims, the renter keeps the asset's utility
+   past `rental_end` for free — listers (or the platform's keeper cron) should call `endrent`
+   promptly.
 
-5. **Cancel** — the owner removes the listing with `cancelrent(asset_id)` whenever no rental is
-   actively running. Because nothing is escrowed, cancelling is just removing the listing row; an
-   expired-but-unreclaimed rental is reclaimed to the owner as part of the cancel. A listing whose
-   owner no longer owns the asset is invalid and may be cancelled by anyone.
+6. **Cancel** — the owner removes the listing with `cancelrent(asset_id)` at any time. Delisting is
+   **not** termination: during an active rental it only withdraws the offer of future rentals; the
+   lease runs to its end and is then reclaimed as usual. Because nothing is escrowed, cancelling is
+   just removing the listing row; an expired-but-unreclaimed rental is reclaimed to the owner as
+   part of the cancel. A listing whose owner no longer owns the asset (while unleased) is invalid
+   and may be cancelled by anyone.
 
 ## Actions
 
 | Action | Auth | Effect |
 |---|---|---|
 | `announcerent(lister, asset_id, price_per_hour, settlement_symbol, maximum_rental_duration, maker_marketplace)` | lister | Create a rental listing (no escrow) |
-| `cancelrent(asset_id)` | owner (anyone if invalid) | Remove the listing; reclaim first if expired-but-unreclaimed |
+| `editrent(asset_id, new_price_per_hour, new_maximum_rental_duration, new_maker_marketplace)` | owner | Change the offered terms, even mid-lease; symbols immutable |
+| `cancelrent(asset_id)` | owner (anyone if invalid) | Delist (lease unaffected); reclaim first if expired-but-unreclaimed |
 | `rentasset(renter, asset_id, rental_hours, expected_price_per_hour, intended_delphi_median, taker_marketplace)` | renter | Rent or extend; pays from the renter's balance |
-| `endrent(asset_id)` | anyone | After expiry, reclaim the asset to the lister (idempotent) |
+| `endrent(asset_id)` | anyone | After expiry, reclaim the asset to the lister (idempotent, lease-driven) |
 | `payrentram(payer, asset_id)` | payer | Take over the RAM cost of the listing row |
 
-Market log actions: `lognewrent` (listing created), `logrental` (rental executed: renter, hours,
-paid price, rental_end). The lock and return events are logged on the AtomicAssets side: `loglock`
-(lease opened or extended) and `logreclaim` (asset returned). The reclaim path intentionally notifies
-**no account that could veto it** (not the renter, not the title owner) so the guaranteed return
-cannot be aborted — only the asset's collection is notified.
+Market log actions: `lognewrent` (listing created), `logeditrent` (terms changed), `logrental`
+(rental executed: `rental_id`, renter, hours, paid price, `rental_start`, `rental_end`,
+`is_extension`). The lock and return events are logged on the AtomicAssets side: `loglock` (lease
+opened or extended — distinguishable via `rental_start`) and `logreclaim` (asset returned); both
+echo the `rental_id` of the rental that opened the lease, so indexers can join them to the market's
+rental without parsing memos. The reclaim path intentionally notifies **no account that could veto
+it** (not the renter, not the title owner) so the guaranteed return cannot be aborted — only the
+asset's collection is notified. (Corollary: a collection notify contract that throws on `loglock`
+can selectively veto lease *creation* for its assets — a de facto per-collection opt-out.)
 
 ## The `rentals` table
 
-The row is immutable listing config; the lock/renter/end state lives in the AtomicAssets `leases`
-table, and the two join 1:1 on `asset_id`.
+The row is the owner's offered terms (mutable via `editrent`); the lock/renter/end state lives in
+the AtomicAssets `leases` table, and the two join 1:1 on `asset_id`.
 
 | Field | Meaning |
 |---|---|
@@ -110,7 +128,8 @@ table, and the two join 1:1 on `asset_id`.
 - To honor rentals, treat the AtomicAssets **owner as the effective user**: during a lease the renter
   *is* the owner, so no special resolution is needed for utility. The lock state (whether a returnable
   lease is in force, and when it ends) is the AtomicAssets `leases` row for the asset.
-- The `leases` row carries `title_owner` (the lister the asset returns to), `renter`, `rental_start`
-  and `rental_end`. Treat `rental_end <= now` as "rental over"; after expiry the renter remains the
-  owner until `endrent`, the next `rentasset`, or `cancelrent` triggers the reclaim.
+- The `leases` row carries `title_owner` (the lister the asset returns to), `renter`, `rental_start`,
+  `rental_end` and the opening `rental_id`. Treat `rental_end <= now` as "rental over"; after expiry
+  the renter remains the owner until `endrent`, the next `rentasset`, or `cancelrent` triggers the
+  reclaim.
 - Royalties apply to rentals exactly as to sales, including the royalty log actions.
