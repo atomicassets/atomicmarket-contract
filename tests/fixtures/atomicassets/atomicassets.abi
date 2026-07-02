@@ -646,6 +646,10 @@
                 {
                     "name": "rental_end",
                     "type": "uint32"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
                 }
             ]
         },
@@ -668,6 +672,10 @@
                 {
                     "name": "rental_end",
                     "type": "uint32"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
                 },
                 {
                     "name": "memo",
@@ -774,8 +782,16 @@
                     "type": "name"
                 },
                 {
+                    "name": "rental_start",
+                    "type": "uint32"
+                },
+                {
                     "name": "rental_end",
                     "type": "uint32"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
                 }
             ]
         },
@@ -934,6 +950,10 @@
                 {
                     "name": "renter",
                     "type": "name"
+                },
+                {
+                    "name": "rental_id",
+                    "type": "uint64"
                 }
             ]
         },
@@ -1188,6 +1208,10 @@
                 {
                     "name": "rental_market",
                     "type": "name"
+                },
+                {
+                    "name": "max_lease_seconds",
+                    "type": "uint32"
                 }
             ]
         },
@@ -1266,6 +1290,16 @@
                 {
                     "name": "collection_name",
                     "type": "name"
+                }
+            ]
+        },
+        {
+            "name": "setleasecap",
+            "base": "",
+            "fields": [
+                {
+                    "name": "max_lease_seconds",
+                    "type": "uint32"
                 }
             ]
         },
@@ -1688,6 +1722,11 @@
         {
             "name": "setlastpayer",
             "type": "setlastpayer",
+            "ricardian_contract": ""
+        },
+        {
+            "name": "setleasecap",
+            "type": "setleasecap",
             "ricardian_contract": ""
         },
         {

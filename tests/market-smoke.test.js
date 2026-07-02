@@ -728,6 +728,7 @@ describe('atomicmarket end to end', () => {
             collection_name: COL,
             rental_start: Number(leased[0].rental_end) - 2 * 3600,
             rental_end: Number(leased[0].rental_end),
+            rental_id: 1, // the AM rental counter, echoed on the lease for indexer joins
         }]);
 
         // payout: 1.0 WAX -> 2% fees.atomic, 10% author, 88% straight to the seller
@@ -744,10 +745,11 @@ describe('atomicmarket end to end', () => {
             ]).send('renter2@active')
         ).rejects.toThrow(/currently rented out/);
 
-        // owner can't cancel while active
+        // cancelling during an active lease is the owner's delist right, nobody else's
+        // (the delist-during-lease semantics have their own dedicated test below)
         await expect(
-            atomicmarket.actions.cancelrent([ASSET1]).send('seller@active')
-        ).rejects.toThrow(/currently rented out/);
+            atomicmarket.actions.cancelrent([ASSET1]).send('renter2@active')
+        ).rejects.toThrow(/missing required authority/);
 
         // endrent before expiry fails
         await expect(
@@ -804,7 +806,104 @@ describe('atomicmarket end to end', () => {
             collection_name: COL,
             rental_start: Number(leased[0].rental_end) - 1 * 3600,
             rental_end: Number(leased[0].rental_end),
+            rental_id: 2, // the re-lease is a NEW rental: fresh counter id on the fresh lease
         }]);
+    });
+
+    test('editrent reprices the listing mid-lease: extensions and re-rents pay the NEW terms', async () => {
+        await listAndActivateRental(); // 0.5 WAX/h, 24h max
+
+        await deposit('renter', 10);
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 2, WAX(0.5), 0, '',
+        ]).send('renter@active');
+
+        // mid-lease the owner reprices to 2 WAX/h and shortens the max to 12h: the listing row
+        // is the owner's OFFER of future rentals, separate from the renter's purchased lease
+        await atomicmarket.actions.editrent([
+            ASSET1, WAX(2), 12 * 3600, '',
+        ]).send('seller@active');
+        expect(marketTables.rentals()[0].price_per_hour).toBe(WAX(2));
+        expect(Number(marketTables.rentals()[0].maximum_rental_duration)).toBe(12 * 3600);
+
+        // the running lease is untouched
+        expect(aaTables.leases()[0].renter).toBe('renter');
+
+        // an extension is a fresh purchase of the current offer: the old price is now rejected...
+        await expect(
+            atomicmarket.actions.rentasset([
+                'renter', ASSET1, 1, WAX(0.5), 0, '',
+            ]).send('renter@active')
+        ).rejects.toThrow(/differs from the expected price/);
+        // ...and the new price charges 2 WAX for 1h
+        const endBefore = Number(aaTables.leases()[0].rental_end);
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 1, WAX(2), 0, '',
+        ]).send('renter@active');
+        expect(Number(aaTables.leases()[0].rental_end)).toBe(endBefore + 3600);
+
+        // stale-price snipe regression: at expiry, a re-rent must pay the CURRENT terms, not
+        // the price the listing had when the previous lease started
+        blockchain.addTime(TimePoint.fromMilliseconds(4 * 3600 * 1000));
+        await deposit('renter2', 10);
+        await expect(
+            atomicmarket.actions.rentasset([
+                'renter2', ASSET1, 1, WAX(0.5), 0, '',
+            ]).send('renter2@active')
+        ).rejects.toThrow(/differs from the expected price/);
+        await atomicmarket.actions.rentasset([
+            'renter2', ASSET1, 1, WAX(2), 0, '',
+        ]).send('renter2@active');
+        expect(aaTables.leases()[0].renter).toBe('renter2');
+    });
+
+    test('editrent validation: owner-only, same listing symbol, duration bounds', async () => {
+        await listAndActivateRental();
+
+        await expect(
+            atomicmarket.actions.editrent([
+                ASSET1, WAX(2), 86400, '',
+            ]).send('buyer@active')
+        ).rejects.toThrow(/missing required authority/);
+
+        await expect(
+            atomicmarket.actions.editrent([
+                ASSET1, '2.00 USD', 86400, '',
+            ]).send('seller@active')
+        ).rejects.toThrow(/listing symbol cannot be changed/);
+
+        await expect(
+            atomicmarket.actions.editrent([
+                ASSET1, WAX(2), 1800, '',
+            ]).send('seller@active')
+        ).rejects.toThrow(/at least one hour/);
+    });
+
+    test('delisting during an active lease withdraws the offer without touching the lease', async () => {
+        await listAndActivateRental();
+
+        await deposit('renter', 1);
+        await atomicmarket.actions.rentasset([
+            'renter', ASSET1, 2, WAX(0.5), 0, '',
+        ]).send('renter@active');
+
+        // only the owner may delist while the lease runs (the listing is not "invalid":
+        // the owner not owning the asset is the normal rented state)
+        await expect(
+            atomicmarket.actions.cancelrent([ASSET1]).send('renter2@active')
+        ).rejects.toThrow(/missing required authority/);
+        await atomicmarket.actions.cancelrent([ASSET1]).send('seller@active');
+
+        // listing gone, lease (and the renter's ownership) untouched
+        expect(marketTables.rentals()).toEqual([]);
+        expect(aaTables.leases()[0].renter).toBe('renter');
+        expect(aaTables.assets('renter').map((a) => a.asset_id)).toContain(ASSET1);
+
+        // the lease still expires normally, and the lease-driven endrent needs no listing row
+        blockchain.addTime(TimePoint.fromMilliseconds(3 * 3600 * 1000));
+        await atomicmarket.actions.endrent([ASSET1]).send('renter2@active');
+        expect(aaTables.leases()).toEqual([]);
+        expect(aaTables.assets('seller').map((a) => a.asset_id)).toContain(ASSET1);
     });
 
     test('cancelrent on an expired-but-not-ended rental reclaims the asset to the lister', async () => {

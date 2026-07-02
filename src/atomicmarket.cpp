@@ -1877,13 +1877,76 @@ ACTION atomicmarket::announcerent(
 
 
 /**
+* Edits the terms of an existing rental listing
+*
+* Allowed at any time, including while a lease is running: the listing row is the owner's OFFER
+* of future rentals, separate from the renter's purchased lease. Without this, the terms would be
+* frozen for the whole lease and the expiry second could be sniped at a stale price for a fresh
+* full window. An extension by the incumbent renter is a fresh purchase of the current offer, so
+* it pays the NEW terms; renters are protected by the expected_price_per_hour pin in rentasset.
+*
+* The listing symbol and settlement_symbol cannot change (expected_price_per_hour pins amount +
+* listing symbol only, so a mutable settlement symbol could charge a renter holding multiple
+* deposited tokens in an unintended one). Relist to change symbols.
+*
+* @required_auth The listing's owner
+*/
+ACTION atomicmarket::editrent(
+    uint64_t asset_id,
+    asset new_price_per_hour,
+    uint32_t new_maximum_rental_duration,
+    name new_maker_marketplace
+) {
+    auto rentals = get_rentals();
+    auto rental_itr = rentals.require_find(asset_id,
+        "No rental listing with this asset_id exists");
+
+    require_auth(rental_itr->owner);
+
+    check(new_price_per_hour.is_valid(), "Invalid type new_price_per_hour");
+    check(new_price_per_hour.amount > 0, "The price per hour must be greater than zero");
+    check(new_price_per_hour.symbol == rental_itr->price_per_hour.symbol,
+        "The listing symbol cannot be changed. Cancel and announce a new listing instead");
+
+    check(new_maximum_rental_duration >= 3600,
+        "The maximum rental duration must be at least one hour (3600 seconds)");
+    check(new_maximum_rental_duration <= 2419200,
+        "The maximum rental duration can't be longer than 28 days");
+
+    check(is_valid_marketplace(new_maker_marketplace), "The maker marketplace is not a valid marketplace");
+
+    rentals.modify(rental_itr, same_payer, [&](auto &_rental) {
+        _rental.price_per_hour = new_price_per_hour;
+        _rental.maximum_rental_duration = new_maximum_rental_duration;
+        _rental.maker_marketplace = new_maker_marketplace;
+    });
+
+    action(
+        permission_level{get_self(), name("active")},
+        get_self(),
+        name("logeditrent"),
+        make_tuple(
+            asset_id,
+            rental_itr->owner,
+            new_price_per_hour,
+            rental_itr->settlement_symbol,
+            new_maximum_rental_duration,
+            new_maker_marketplace
+        )
+    ).send();
+}
+
+
+/**
 * Cancels a rental listing
 *
 * Non-custodially the asset is never escrowed, so cancelling is just removing the listing row.
+* Delisting is NOT termination: cancelling during an active rental only withdraws the offer of
+* future rentals - the renter's purchased lease is untouched and expires normally (the reclaim
+* then returns the asset to the owner; the lease-driven endrent works without a listing row).
 * If no rental is active, the owner can cancel - or anyone can, if the owner no longer owns the
-* asset (which makes the listing invalid). An actively running rental cannot be cancelled; an
-* expired-but-unreclaimed rental is reclaimed (returning the asset to the owner) as part of the
-* cancel.
+* asset (which makes the listing invalid). An expired-but-unreclaimed rental is reclaimed
+* (returning the asset to the owner) as part of the cancel.
 *
 * @required_auth The listing's owner (see above for the invalid listing exception)
 */
@@ -1898,17 +1961,15 @@ ACTION atomicmarket::cancelrent(
 
     atomicassets::leases_t aa_leases = atomicassets::get_leases();
     auto lease_itr = aa_leases.find(asset_id);
-    bool lease_exists = lease_itr != aa_leases.end();
-    bool active_lease = lease_exists && lease_itr->rental_end > current_time;
 
-    check(!active_lease,
-        "The asset is currently rented out. The listing can only be cancelled after the rental period is over");
-
-    if (lease_exists) {
-        // Expired but never reclaimed: only the owner can cancel, and the asset returns to them
-        // via the permissionless reclaim.
+    if (lease_itr != aa_leases.end()) {
+        // A lease row means only the owner may cancel. Active: withdraw the offer only - the
+        // renter keeps the lease they paid for. Expired but never reclaimed: also return the
+        // asset to the owner via the permissionless reclaim.
         require_auth(rental_itr->owner);
-        send_aa_reclaim(asset_id);
+        if (lease_itr->rental_end <= current_time) {
+            send_aa_reclaim(asset_id);
+        }
     } else {
         // Not rented: the asset is still with the lister, nothing to return. Anyone may cancel an
         // invalid listing (the owner no longer owns the asset); otherwise the owner must authorize.
@@ -2004,7 +2065,7 @@ ACTION atomicmarket::rentasset(
 
     internal_decrease_balance(renter, settlement_price);
 
-    uint64_t rental_counter_id = consume_counter(name("rental"));
+    uint64_t rental_id = consume_counter(name("rental"));
 
     // asset_scope must be the asset's current owner at payout time: the renter for an extension or
     // expired re-rental, else the listing owner. This holds only because the inline reclaim/leasestart
@@ -2021,12 +2082,13 @@ ACTION atomicmarket::rentasset(
         vector <uint64_t> {asset_id},
         asset_scope,
         name("rental"),
-        rental_counter_id,
-        "AtomicMarket Rental Payout - ID #" + to_string(rental_counter_id)
+        rental_id,
+        "AtomicMarket Rental Payout - ID #" + to_string(rental_id)
     );
 
     if (is_extension) {
-        // Same renter, already the owner: only extend the lease end in AtomicAssets.
+        // Same renter, already the owner: only extend the lease end in AtomicAssets. The lease
+        // keeps the rental_id that opened it; this extension is identified by its own logrental.
         action(
             permission_level{get_self(), name("active")},
             atomicassets::ATOMICASSETS_ACCOUNT,
@@ -2040,7 +2102,8 @@ ACTION atomicmarket::rentasset(
             send_aa_reclaim(asset_id);
         }
         // Make the renter the real AtomicAssets owner and lock the asset (the lister's reclaim
-        // right is parked in the AtomicAssets leases table).
+        // right is parked in the AtomicAssets leases table). rental_id is echoed in the AA lease
+        // logs so indexers can join loglock/logreclaim to this rental structurally.
         action(
             permission_level{get_self(), name("active")},
             atomicassets::ATOMICASSETS_ACCOUNT,
@@ -2050,7 +2113,8 @@ ACTION atomicmarket::rentasset(
                 renter,
                 asset_id,
                 (uint32_t) new_rental_end,
-                string("AtomicMarket Rental - ID # ") + to_string(rental_counter_id)
+                rental_id,
+                string("AtomicMarket Rental - ID # ") + to_string(rental_id)
             )
         ).send();
     }
@@ -2060,13 +2124,15 @@ ACTION atomicmarket::rentasset(
         get_self(),
         name("logrental"),
         make_tuple(
-            rental_counter_id,
+            rental_id,
             asset_id,
             rental_itr->owner,
             renter,
             rental_hours,
             settlement_price,
+            (uint32_t) lease_start,
             (uint32_t) new_rental_end,
+            is_extension,
             taker_marketplace
         )
     ).send();
@@ -2074,20 +2140,20 @@ ACTION atomicmarket::rentasset(
 
 
 /**
-* Wraps up an expired rental, making the listing rentable again
+* Wraps up an expired rental, returning the asset to the lister
 *
-* The asset is returned to the lister by the permissionless AtomicAssets `reclaim`. endrent is just
-* the AtomicMarket-facing trigger for it once the rental is over; a keeper calling AA `reclaim`
+* The asset is returned by the permissionless AtomicAssets `reclaim`. endrent is just the
+* AtomicMarket-facing trigger for it once the rental is over; a keeper calling AA `reclaim`
 * directly does the same thing. Can be called by anyone.
+*
+* Purely lease-driven: it does not require a rentals listing row, so it keeps working for
+* leases whose listing was delisted (cancelrent) while they ran.
 *
 * @required_auth None
 */
 ACTION atomicmarket::endrent(
     uint64_t asset_id
 ) {
-    auto rentals = get_rentals();
-    rentals.require_find(asset_id, "No rental listing with this asset_id exists");
-
     // AtomicAssets leases is the source of truth. No row means it was already reclaimed (by a keeper
     // or otherwise), so endrent is a no-op - it is idempotent and safe to call again.
     atomicassets::leases_t aa_leases = atomicassets::get_leases();
@@ -2428,19 +2494,35 @@ ACTION atomicmarket::lognewrent(
 }
 
 ACTION atomicmarket::logrental(
-    uint64_t rental_counter_id,
+    uint64_t rental_id,
     uint64_t asset_id,
     name lister,
     name renter,
     uint32_t rental_hours,
     asset paid_settlement_price,
+    uint32_t rental_start,
     uint32_t rental_end,
+    bool is_extension,
     name taker_marketplace
 ) {
     require_auth(get_self());
 
     require_recipient(lister);
     require_recipient(renter);
+}
+
+
+ACTION atomicmarket::logeditrent(
+    uint64_t asset_id,
+    name owner,
+    asset new_price_per_hour,
+    symbol settlement_symbol,
+    uint32_t new_maximum_rental_duration,
+    name new_maker_marketplace
+) {
+    require_auth(get_self());
+
+    require_recipient(owner);
 }
 
 // The royalty distribution logs intentionally notify nobody (see the header comment):

@@ -344,6 +344,13 @@ public:
         name maker_marketplace
     );
 
+    ACTION editrent(
+        uint64_t asset_id,
+        asset new_price_per_hour,
+        uint32_t new_maximum_rental_duration,
+        name new_maker_marketplace
+    );
+
     ACTION cancelrent(
         uint64_t asset_id
     );
@@ -472,14 +479,25 @@ public:
     );
 
     ACTION logrental(
-        uint64_t rental_counter_id,
+        uint64_t rental_id,
         uint64_t asset_id,
         name lister,
         name renter,
         uint32_t rental_hours,
         asset paid_settlement_price,
+        uint32_t rental_start,
         uint32_t rental_end,
+        bool is_extension,
         name taker_marketplace
+    );
+
+    ACTION logeditrent(
+        uint64_t asset_id,
+        name owner,
+        asset new_price_per_hour,
+        symbol settlement_symbol,
+        uint32_t new_maximum_rental_duration,
+        name new_maker_marketplace
     );
 
     /*
