@@ -5,15 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 AtomicMarket V2.0 is a marketplace smart contract (C++ / Antelope, formerly EOSIO) for trading
-and renting [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs. It builds
+[AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract) NFTs. It builds
 on the AtomicAssets V2.0 contract (developed in the sibling repo `../atomicassets-contract`,
 branch `feat/v2-integration`) and extends the upstream AtomicMarket with:
 
 - **Royalty splits**: a collection's market fee can be distributed across weighted founders,
   per-template recipients, and attribute-matching rules instead of going entirely to the
   collection author
-- **Custodial rentals**: per-hour asset rentals using the AtomicAssets V2 `holders` table and
-  `move` action (the market contract holds ownership, the renter receives holdership)
 - **Single-asset listings only**: bundle listings were removed (legacy bundle rows are
   auto-cancelled when touched); multiple assets are traded via multiple listings in one
   transaction
@@ -35,9 +33,6 @@ branch `feat/v2-integration`) and extends the upstream AtomicMarket with:
 
 - **Sales / auctions / buyoffers / template buyoffers**: the upstream listing types; every
   listing holds exactly ONE asset
-- **Rentals**: `announcerent` -> transfer with memo `"rental"` (custody) -> `rentasset`
-  (pays per-hour price, holdership moves to renter) -> `endrent` after expiry (anyone) ->
-  `cancelrent` (owner reclaims the asset)
 - **Royalty configs** (`royaltyconf` / `royaltytemp` / `royaltyattr` tables): mutations require
   the collection AUTHOR's authorization only (financial config; authorized accounts are
   deliberately rejected). Category splits renormalize across categories that have payees;
@@ -88,8 +83,8 @@ npx jest market     # run test files matching a pattern
 
 ### Test Structure
 - `tests/market-smoke.test.js` - end-to-end suite: notification dispatch routing, sale payouts
-  (legacy + royalty splits with exact integer math), execution-time collection fee, bundle-removal behavior
-  (including legacy rows injected via `tables.X(...).set(...)`), and the full rental lifecycle
+  (legacy + royalty splits with exact integer math), execution-time collection fee, and
+  bundle-removal behavior (including legacy rows injected via `tables.X(...).set(...)`)
 - `tests/fixtures/eosio.token/` - token contract fixture (wasm + abi)
 - `tests/fixtures/atomicassets/` - the AtomicAssets V2 contract the market integrates with.
   Rebuild from the sibling repo (`bash ../atomicassets-contract/build.sh`) and re-copy the

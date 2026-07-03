@@ -314,51 +314,6 @@ public:
     );
 
 
-    /*
-        Rentals
-
-        Custodial rental flow:
-        1. The owner announces a rental listing (announcerent), specifying the price per hour,
-           the settlement symbol, and the maximum duration a single rental can cover
-        2. The owner transfers the asset to the atomicmarket contract with the memo "rental",
-           which activates the listing (the contract becomes the custodial owner)
-        3. A renter pays for a number of hours from their deposited balance (rentasset). The
-           payment is distributed like a sale payout (market fees, collection fee / royalty
-           splits, remainder to the listing owner) and the atomicassets HOLDERSHIP of the
-           asset is moved to the renter, while ownership stays with the contract
-        4. After the rental period is over, anyone can reset the holdership back to the
-           contract (endrent), making the listing rentable again
-        5. The owner can cancel the listing and reclaim the asset whenever no rental is
-           actively running (cancelrent)
-    */
-
-    ACTION announcerent(
-        name lister,
-        uint64_t asset_id,
-        asset price_per_hour,
-        symbol settlement_symbol,
-        uint32_t maximum_rental_duration,
-        name maker_marketplace
-    );
-
-    ACTION cancelrent(
-        uint64_t asset_id
-    );
-
-    ACTION rentasset(
-        name renter,
-        uint64_t asset_id,
-        uint32_t rental_hours,
-        asset expected_price_per_hour,
-        uint64_t intended_delphi_median,
-        name taker_marketplace
-    );
-
-    ACTION endrent(
-        uint64_t asset_id
-    );
-
-
     ACTION paysaleram(
         name payer,
         uint64_t sale_id
@@ -372,11 +327,6 @@ public:
     ACTION paybuyoram(
         name payer,
         uint64_t buyoffer_id
-    );
-
-    ACTION payrentram(
-        name payer,
-        uint64_t asset_id
     );
 
 
@@ -457,36 +407,9 @@ public:
         uint64_t auction_id
     );
 
-    ACTION lognewrent(
-        uint64_t asset_id,
-        name lister,
-        asset price_per_hour,
-        symbol settlement_symbol,
-        uint32_t maximum_rental_duration,
-        name maker_marketplace,
-        name collection_name,
-        double collection_fee
-    );
-
-    ACTION logrentstart(
-        uint64_t asset_id,
-        name lister
-    );
-
-    ACTION logrental(
-        uint64_t rental_counter_id,
-        uint64_t asset_id,
-        name lister,
-        name renter,
-        uint32_t rental_hours,
-        asset paid_settlement_price,
-        uint32_t rental_end,
-        name taker_marketplace
-    );
-
     /*
-        Royalty distribution logs - emitted by every settlement (sale, auction, buyoffer,
-        rental) that distributes a collection fee through a royalty split config. One action
+        Royalty distribution logs - emitted by every settlement (sale, auction, buyoffer)
+        that distributes a collection fee through a royalty split config. One action
         per asset and category (one per matched rule for the attributes category), carrying
         the exact amounts credited to the internal balances table.
 
@@ -679,27 +602,6 @@ private:
 
     typedef multi_index <name("tbuyoffers"), template_buyoffer_s> template_buyoffers_t;
 
-    TABLE rentals_s {
-        uint64_t asset_id;
-        name     owner;                     // the listing creator; receives the rental payouts
-        name     holder;                    // the current renter; name("") when not rented out
-        asset    price_per_hour;            // denoted in the listing symbol
-        symbol   settlement_symbol;         // what the rental is actually paid in
-        uint32_t maximum_rental_duration;   // seconds; the longest period a rental can cover
-        uint32_t rental_end;                // seconds since epoch; 0 when not rented out
-        bool     asset_transferred;         // true once the asset is in contract custody
-        name     maker_marketplace;
-        name     collection_name;
-        double   collection_fee;
-
-        uint64_t primary_key() const { return asset_id; };
-        uint64_t by_rental_end() const { return (uint64_t) rental_end; };
-    };
-
-    typedef multi_index <name("rentals"), rentals_s,
-        indexed_by <name("rentalends"), const_mem_fun <rentals_s, uint64_t, &rentals_s::by_rental_end>>>
-    rentals_t;
-
     TABLE marketplaces_s {
         name marketplace_name;
         name creator;
@@ -770,7 +672,6 @@ private:
     auctions_t     get_auctions() { return auctions_t(get_self(), get_self().value); }
     buyoffers_t    get_buyoffers() { return buyoffers_t(get_self(), get_self().value); }
     template_buyoffers_t get_template_buyoffers() { return template_buyoffers_t(get_self(), get_self().value); }
-    rentals_t      get_rentals() { return rentals_t(get_self(), get_self().value); }
 
     marketplaces_t get_marketplaces() { return marketplaces_t(get_self(), get_self().value); }
     counters_t     get_counters() { return counters_t(get_self(), get_self().value); }

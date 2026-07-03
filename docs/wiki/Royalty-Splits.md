@@ -5,7 +5,7 @@ With a **royalty split config**, the author can instead distribute it across thr
 categories:
 
 1. **Founders** — a global recipient list applying to every settlement of the collection
-2. **Templates** — recipient lists keyed by the sold/rented asset's `template_id`
+2. **Templates** — recipient lists keyed by the sold asset's `template_id`
 3. **Attributes** — rules that match an attribute `(field, value)` on the asset
 
 Everything in this system is configured by — and only by — the **collection author**.

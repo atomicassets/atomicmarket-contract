@@ -5,14 +5,12 @@ const fs = require('fs');
 /*
  * End-to-end smoke suite for the atomicmarket contract.
  *
- * Covers the three workstreams:
+ * Covers the two workstreams:
  *  1. Notification dispatch (the on_notify handlers): proves atomicassets::transfer routes to
  *     receive_asset_transfer (and NOT the *::transfer token handler), token transfers route to
  *     receive_token_transfer, and atomicassets::lognewoffer routes to receive_asset_offer.
  *  2. Sale payouts: legacy collection fee (no royalty config) and the full royalty split
  *     engine (founders / template / attribute categories, exact integer math incl. dust).
- *  3. Custodial rentals: announce -> custody transfer -> rent (holdership moves to the renter
- *     in the atomicassets holders table) -> extension -> expiry -> endrent -> cancelrent.
  */
 
 const WAX = (amount) => `${amount.toFixed(8)} WAX`;
@@ -30,14 +28,12 @@ describe('atomicmarket end to end', () => {
 
     const aaTables = {
         assets: (scope) => atomicassets.tables.assets(nameToBigInt(Name.from(scope))).getTableRows(),
-        holders: () => atomicassets.tables.holders(nameToBigInt(atomicassets.name)).getTableRows(),
         offers: () => atomicassets.tables.offers(nameToBigInt(atomicassets.name)).getTableRows(),
     };
     const marketTables = {
         balances: () => atomicmarket.tables.balances(nameToBigInt(atomicmarket.name)).getTableRows(),
         sales: () => atomicmarket.tables.sales(nameToBigInt(atomicmarket.name)).getTableRows(),
         auctions: () => atomicmarket.tables.auctions(nameToBigInt(atomicmarket.name)).getTableRows(),
-        rentals: () => atomicmarket.tables.rentals(nameToBigInt(atomicmarket.name)).getTableRows(),
     };
 
     const balanceOf = (account) => {
@@ -367,30 +363,6 @@ describe('atomicmarket end to end', () => {
         expect(aaTables.assets('buyer').length).toBe(1);
     });
 
-    test('delphi-priced rental settles in WAX at the oracle rate', async () => {
-        await setupDelphiPair();
-
-        await atomicmarket.actions.announcerent([
-            'seller', ASSET1, '0.50 USD', '8,WAX', 86400, '',
-        ]).send('seller@active');
-        await atomicassets.actions.transfer([
-            'seller', MARKET, [ASSET1], 'rental',
-        ]).send('seller@active');
-
-        await deposit('renter', 20);
-
-        // 2 hours x 0.50 USD = 1.00 USD = 20 WAX
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 2, '0.50 USD', 500, '',
-        ]).send('renter@active');
-
-        expect(balanceOf('author')).toEqual([WAX(2)]);          // 10% of 20 WAX
-        expect(balanceOf('fees.atomic')).toEqual([WAX(0.4)]);   // 2% of 20 WAX
-        const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
-        expect(sellerTokens).toEqual([{ balance: WAX(17.6) }]); // 88% of 20 WAX
-        expect(marketTables.rentals()[0].holder).toBe('renter');
-    });
-
     test('lowering the collection fee after listing discounts the executed sale', async () => {
         await listAndActivateSale([ASSET1], 1);
         await deposit('buyer', 1);
@@ -682,219 +654,6 @@ describe('atomicmarket end to end', () => {
         expect(atomicmarket.tables.buyoffers(nameToBigInt(atomicmarket.name)).getTableRows()).toEqual([]);
         expect(balanceOf('buyer')).toEqual([WAX(1)]); // escrow returned
         expect(aaTables.assets('seller').length).toBe(2); // assets never moved
-    });
-
-    /* ------------------------------------------------------------------ */
-    /* 3. Rentals                                                          */
-    /* ------------------------------------------------------------------ */
-
-    const listAndActivateRental = async () => {
-        await atomicmarket.actions.announcerent([
-            'seller', ASSET1, WAX(0.5), '8,WAX', 86400, '',
-        ]).send('seller@active');
-        await atomicassets.actions.transfer([
-            'seller', MARKET, [ASSET1], 'rental',
-        ]).send('seller@active');
-    };
-
-    test('full rental lifecycle: announce, custody, rent, extend, expire, endrent, cancel', async () => {
-        await listAndActivateRental();
-
-        let rentals = marketTables.rentals();
-        expect(rentals.length).toBe(1);
-        expect(rentals[0].asset_transferred).toBe(true);
-        expect(rentals[0].owner).toBe('seller');
-        expect(rentals[0].holder).toBe('');
-
-        // the market contract is now the custodial owner
-        expect(aaTables.assets(MARKET).length).toBe(1);
-
-        // rent for 2 hours = 1.0 WAX
-        await deposit('renter', 2);
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 2, WAX(0.5), 0, '',
-        ]).send('renter@active');
-
-        rentals = marketTables.rentals();
-        expect(rentals[0].holder).toBe('renter');
-
-        // holdership moved to the renter inside atomicassets
-        expect(aaTables.holders()).toEqual([
-            { asset_id: ASSET1, holder: 'renter', owner: MARKET },
-        ]);
-
-        // payout: 1.0 WAX -> 2% fees.atomic, 10% author, 88% straight to the seller
-        expect(balanceOf('author')).toEqual([WAX(0.1)]);
-        expect(balanceOf('fees.atomic')).toEqual([WAX(0.02)]);
-        const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
-        expect(sellerTokens).toEqual([{ balance: WAX(0.88) }]);
-
-        // someone else can't rent while active
-        await deposit('renter2', 2);
-        await expect(
-            atomicmarket.actions.rentasset([
-                'renter2', ASSET1, 1, WAX(0.5), 0, '',
-            ]).send('renter2@active')
-        ).rejects.toThrow(/currently rented out/);
-
-        // owner can't cancel while active
-        await expect(
-            atomicmarket.actions.cancelrent([ASSET1]).send('seller@active')
-        ).rejects.toThrow(/currently rented out/);
-
-        // endrent before expiry fails
-        await expect(
-            atomicmarket.actions.endrent([ASSET1]).send('renter2@active')
-        ).rejects.toThrow(/not over yet/);
-
-        // the same renter can extend (1 more hour = 0.5 WAX)
-        const endBefore = Number(marketTables.rentals()[0].rental_end);
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 1, WAX(0.5), 0, '',
-        ]).send('renter@active');
-        expect(Number(marketTables.rentals()[0].rental_end)).toBe(endBefore + 3600);
-
-        // jump past the rental end; anyone can wrap it up
-        blockchain.addTime(TimePoint.fromMilliseconds(4 * 3600 * 1000));
-        await atomicmarket.actions.endrent([ASSET1]).send('renter2@active');
-
-        expect(aaTables.holders()).toEqual([]);
-        rentals = marketTables.rentals();
-        expect(rentals[0].holder).toBe('');
-        expect(Number(rentals[0].rental_end)).toBe(0);
-
-        // owner cancels; the asset comes back
-        await atomicmarket.actions.cancelrent([ASSET1]).send('seller@active');
-        expect(marketTables.rentals()).toEqual([]);
-        expect(aaTables.assets('seller').length).toBe(2); // ASSET1 + ASSET2
-    });
-
-    test('renting after expiry without endrent moves holdership from the old renter', async () => {
-        await listAndActivateRental();
-
-        await deposit('renter', 1);
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 1, WAX(0.5), 0, '',
-        ]).send('renter@active');
-
-        blockchain.addTime(TimePoint.fromMilliseconds(2 * 3600 * 1000));
-
-        // no endrent in between - renter2 rents directly
-        await deposit('renter2', 1);
-        await atomicmarket.actions.rentasset([
-            'renter2', ASSET1, 1, WAX(0.5), 0, '',
-        ]).send('renter2@active');
-
-        expect(aaTables.holders()).toEqual([
-            { asset_id: ASSET1, holder: 'renter2', owner: MARKET },
-        ]);
-        expect(marketTables.rentals()[0].holder).toBe('renter2');
-    });
-
-    test('cancelrent on an expired-but-not-ended rental reclaims holdership and the asset', async () => {
-        await listAndActivateRental();
-
-        await deposit('renter', 1);
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 1, WAX(0.5), 0, '',
-        ]).send('renter@active');
-
-        blockchain.addTime(TimePoint.fromMilliseconds(2 * 3600 * 1000));
-
-        await atomicmarket.actions.cancelrent([ASSET1]).send('seller@active');
-
-        expect(aaTables.holders()).toEqual([]);
-        expect(marketTables.rentals()).toEqual([]);
-        expect(aaTables.assets('seller').length).toBe(2);
-    });
-
-    test('rental payouts respect royalty splits', async () => {
-        await setupRoyaltySplits();
-        await listAndActivateRental();
-
-        await deposit('renter', 1);
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 2, WAX(0.5), 0, '',
-        ]).send('renter@active');
-
-        // identical math to the sale split test (1.0 WAX total, 0.1 collection cut)
-        expect(balanceOf('founder1')).toEqual(['0.00833333 WAX']);
-        expect(balanceOf('founder2')).toEqual(['0.02499999 WAX']);
-        expect(balanceOf('temproy1')).toEqual(['0.03333333 WAX']);
-        expect(balanceOf('attrroy1')).toEqual(['0.03333333 WAX']);
-        expect(balanceOf('author')).toEqual(['0.00000002 WAX']);
-    });
-
-    test('rental payouts use the discounted fee at execution time', async () => {
-        await listAndActivateRental();
-
-        // discount applied after the listing was created and the asset custodied
-        await atomicassets.actions.setmarketfee([COL, 0.05]).send('author@active');
-
-        await deposit('renter', 1);
-        await atomicmarket.actions.rentasset([
-            'renter', ASSET1, 2, WAX(0.5), 0, '',
-        ]).send('renter@active');
-
-        // 1.0 WAX rental: author gets the discounted 5%, not the stored 10%
-        expect(balanceOf('author')).toEqual([WAX(0.05)]);
-        const sellerTokens = token.tables.accounts(nameToBigInt(Name.from('seller'))).getTableRows();
-        expect(sellerTokens).toEqual([{ balance: WAX(0.93) }]);
-    });
-
-    test('payrentram switches the RAM payer without changing the listing', async () => {
-        await listAndActivateRental();
-
-        const before = marketTables.rentals();
-        await atomicmarket.actions.payrentram(['buyer', ASSET1]).send('buyer@active');
-        expect(marketTables.rentals()).toEqual(before);
-    });
-
-    test('rental listing validation', async () => {
-        // unsupported symbol
-        await expect(
-            atomicmarket.actions.announcerent([
-                'seller', ASSET1, '1.0000 EOS', '4,EOS', 86400, '',
-            ]).send('seller@active')
-        ).rejects.toThrow(/not supported/);
-
-        // duration under an hour
-        await expect(
-            atomicmarket.actions.announcerent([
-                'seller', ASSET1, WAX(0.5), '8,WAX', 1800, '',
-            ]).send('seller@active')
-        ).rejects.toThrow(/at least one hour/);
-
-        // not the asset owner
-        await expect(
-            atomicmarket.actions.announcerent([
-                'buyer', ASSET1, WAX(0.5), '8,WAX', 86400, '',
-            ]).send('buyer@active')
-        ).rejects.toThrow(/does not own/);
-
-        await listAndActivateRental();
-
-        // owner can't rent their own asset
-        await expect(
-            atomicmarket.actions.rentasset([
-                'seller', ASSET1, 1, WAX(0.5), 0, '',
-            ]).send('seller@active')
-        ).rejects.toThrow(/own asset/);
-
-        // exceeding the maximum duration (86400s = 24h)
-        await deposit('renter', 100);
-        await expect(
-            atomicmarket.actions.rentasset([
-                'renter', ASSET1, 25, WAX(0.5), 0, '',
-            ]).send('renter@active')
-        ).rejects.toThrow(/maximum rental duration/);
-
-        // price expectation mismatch
-        await expect(
-            atomicmarket.actions.rentasset([
-                'renter', ASSET1, 1, WAX(0.6), 0, '',
-            ]).send('renter@active')
-        ).rejects.toThrow(/differs from the expected price/);
     });
 
     /* ------------------------------------------------------------------ */

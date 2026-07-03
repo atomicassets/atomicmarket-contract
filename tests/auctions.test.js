@@ -36,14 +36,12 @@ describe('atomicmarket auctions', () => {
 
     const aaTables = {
         assets: (scope) => atomicassets.tables.assets(nameToBigInt(Name.from(scope))).getTableRows(),
-        holders: () => atomicassets.tables.holders(nameToBigInt(atomicassets.name)).getTableRows(),
         offers: () => atomicassets.tables.offers(nameToBigInt(atomicassets.name)).getTableRows(),
     };
     const marketTables = {
         balances: () => atomicmarket.tables.balances(nameToBigInt(atomicmarket.name)).getTableRows(),
         sales: () => atomicmarket.tables.sales(nameToBigInt(atomicmarket.name)).getTableRows(),
         auctions: () => atomicmarket.tables.auctions(nameToBigInt(atomicmarket.name)).getTableRows(),
-        rentals: () => atomicmarket.tables.rentals(nameToBigInt(atomicmarket.name)).getTableRows(),
     };
 
     const balanceOf = (account) => {
@@ -154,7 +152,6 @@ describe('atomicmarket auctions', () => {
 
     // The chain clock only moves on addTime (actions do not advance it), and auctions are
     // announced with a 600s duration, so a single 700s jump finishes the latest auction.
-    // This is the same time-advance technique market-smoke uses for rental expiry.
     const finishAuctions = () => blockchain.addTime(TimePoint.fromMilliseconds(700 * 1000));
 
     // Inject an auction row directly into the table store (mirrors market-smoke's legacy-row
