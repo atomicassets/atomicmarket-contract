@@ -601,24 +601,6 @@
             ]
         },
         {
-            "name": "holders_s",
-            "base": "",
-            "fields": [
-                {
-                    "name": "asset_id",
-                    "type": "uint64"
-                },
-                {
-                    "name": "holder",
-                    "type": "name"
-                },
-                {
-                    "name": "owner",
-                    "type": "name"
-                }
-            ]
-        },
-        {
             "name": "init",
             "base": "",
             "fields": []
@@ -744,36 +726,6 @@
                 {
                     "name": "immutable_template_data",
                     "type": "ATTRIBUTE_MAP"
-                }
-            ]
-        },
-        {
-            "name": "logmove",
-            "base": "",
-            "fields": [
-                {
-                    "name": "collection_name",
-                    "type": "name"
-                },
-                {
-                    "name": "owner",
-                    "type": "name"
-                },
-                {
-                    "name": "from",
-                    "type": "name"
-                },
-                {
-                    "name": "to",
-                    "type": "name"
-                },
-                {
-                    "name": "asset_ids",
-                    "type": "uint64[]"
-                },
-                {
-                    "name": "memo",
-                    "type": "string"
                 }
             ]
         },
@@ -976,32 +928,6 @@
                 {
                     "name": "tokens_to_back",
                     "type": "asset[]"
-                }
-            ]
-        },
-        {
-            "name": "move",
-            "base": "",
-            "fields": [
-                {
-                    "name": "owner",
-                    "type": "name"
-                },
-                {
-                    "name": "from",
-                    "type": "name"
-                },
-                {
-                    "name": "to",
-                    "type": "name"
-                },
-                {
-                    "name": "asset_ids",
-                    "type": "uint64[]"
-                },
-                {
-                    "name": "memo",
-                    "type": "string"
                 }
             ]
         },
@@ -1517,11 +1443,6 @@
             "ricardian_contract": ""
         },
         {
-            "name": "logmove",
-            "type": "logmove",
-            "ricardian_contract": ""
-        },
-        {
             "name": "lognewoffer",
             "type": "lognewoffer",
             "ricardian_contract": ""
@@ -1554,11 +1475,6 @@
         {
             "name": "mintasset",
             "type": "mintasset",
-            "ricardian_contract": ""
-        },
-        {
-            "name": "move",
-            "type": "move",
             "ricardian_contract": ""
         },
         {
@@ -1669,13 +1585,6 @@
         {
             "name": "config",
             "type": "config_s",
-            "index_type": "i64",
-            "key_names": [],
-            "key_types": []
-        },
-        {
-            "name": "holders",
-            "type": "holders_s",
             "index_type": "i64",
             "key_names": [],
             "key_types": []
