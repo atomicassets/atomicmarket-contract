@@ -3,7 +3,7 @@
 Audience: the team updating the API reader (eosio-contract-api / atomicassets-api filler)
 for the AtomicMarket V2.0 contract.
 
-- **Code**: https://github.com/atomicassets/atomicmarket-contract (`master`)
+- **Code**: https://github.com/atomicassets/atomicmarket-contract (`main`)
 - **User-facing docs**: https://github.com/atomicassets/atomicmarket-contract/wiki
 - **Status**: merged, CI green, **not yet deployed on-chain** — you can develop against a
   testnet deployment or the VeRT suite (`yarn install && bash build.sh && npm test`;

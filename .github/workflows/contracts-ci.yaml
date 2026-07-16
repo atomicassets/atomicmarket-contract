@@ -13,9 +13,9 @@ name: Contracts CI
 
 on:
   push:
-    branches: [master, "v2/**", "ci/**"]
+    branches: [main, "v2/**", "ci/**"]
   pull_request:
-    branches: [master, "v2/**"]
+    branches: [main, "v2/**"]
   workflow_dispatch:
 
 permissions:
