@@ -9,17 +9,17 @@ Every sale, auction and buyoffer now contains **exactly one asset**. `announcesa
 `announceauct` and `createbuyo` reject `asset_ids` vectors with more than one entry.
 
 **Why:** bundles complicated royalty splitting (per-asset attribution of the collection
-fee), and batching at the *transaction* level — multiple single-asset listings created and
-purchased in one transaction — covers the same use cases cleanly.
+fee), and batching at the *transaction* level, multiple single-asset listings created and
+purchased in one transaction, covers the same use cases cleanly.
 
 **Migration of legacy bundle listings** (rows created before V2):
 
 | Interaction | Result |
 |---|---|
 | `purchasesale` on a bundle sale | No purchase; the sale is cancelled, the buyer is charged nothing |
-| `auctionbid` on an unclaimed bundle auction | No bid; the auction is dissolved — existing bid refunded, custodied assets returned to the seller |
-| `auctclaimbuy` / `auctclaimsel` on an ended, fully unclaimed bundle auction | Dissolved — winning bid refunded, assets returned to the seller |
-| `auctclaim*` on a **partially claimed** bundle auction | Completes (one side was already served; dissolving would pay one party twice). On the seller claim, the collection fee goes to the collection author in full — bundles never touch the royalty split engine |
+| `auctionbid` on an unclaimed bundle auction | No bid; the auction is dissolved, existing bid refunded, custodied assets returned to the seller |
+| `auctclaimbuy` / `auctclaimsel` on an ended, fully unclaimed bundle auction | Dissolved, winning bid refunded, assets returned to the seller |
+| `auctclaim*` on a **partially claimed** bundle auction | Completes (one side was already served; dissolving would pay one party twice). On the seller claim, the collection fee goes to the collection author in full, bundles never touch the royalty split engine |
 | `acceptbuyo` on a bundle buyoffer | No trade; the buyoffer is cancelled, the escrowed price returned to the buyer |
 | `cancelsale` / `cancelauct` on a bundle | Allowed for **anyone** (bundles count as invalid listings); bundle auctions with bids refund the bidder |
 | Activating a bundle (offer memo `sale` / transfer memo `auction` with multiple assets) | Rejected with a pointer to the cancel actions |
@@ -29,15 +29,15 @@ purchased in one transaction — covers the same use cases cleanly.
 Settlements apply the collection's fee **at execution time** (read live from AtomicAssets),
 regardless of the fee stored when the listing was created. Changing a collection's fee on
 AtomicAssets therefore takes effect immediately on **all existing listings** of the
-collection — both reductions (temporary, collection-wide promotion windows) *and* increases
+collection, both reductions (temporary, collection-wide promotion windows) *and* increases
 apply, giving the collection author full control over their fee. This applies to sales,
 auctions and both buyoffer types. The listing row still records the fee at listing
-time, but only for informational / indexing purposes — it no longer affects the payout.
+time, but only for informational / indexing purposes, it no longer affects the payout.
 
 **Note for sellers:** because the fee is read at settlement, a collection author can raise
 their fee (up to the 15% maximum) after you list, so you can net less than you expected
 based on the fee shown when you created the listing. The fee is always bounded by the 15%
-maximum, and the buyer always pays the listed price — only the split between seller and
+maximum, and the buyer always pays the listed price, only the split between seller and
 collection moves. There is currently no per-listing "maximum fee I accept" guard; a front
 end may want to surface the live fee at the moment of sale.
 
@@ -49,8 +49,7 @@ New actions to index:
 
 - Royalty config CRUD: `setroyalconf`, `delroyalconf`, `settemplroy`, `deltemplroy`,
   `setattrroy`, `delattrroy`
-- Royalty distribution logs: `logroyfound`, `logroytempl`, `logroyattr`, `logroydust` —
-  the logs of one settlement sum to exactly the collection fee, so royalty earnings can be
+- Royalty distribution logs: `logroyfound`, `logroytempl`, `logroyattr`, `logroydust`, the logs of one settlement sum to exactly the collection fee, so royalty earnings can be
   indexed without re-implementing the split math. These actions notify no accounts; read
   them from action traces.
 - Note that rule ids in `logroyattr` are never reused (persistent counter), so they are
@@ -58,8 +57,8 @@ New actions to index:
 
 Behavioral changes to existing actions: the legacy-bundle table above (purchases/bids/
 accepts of bundle rows now mutate state *without* trading), and the effective collection
-fee at settlement is the collection's fee at execution time, which may differ — lower or
-higher — from the fee stored in the listing row.
+fee at settlement is the collection's fee at execution time, which may differ, lower or
+higher, from the fee stored in the listing row.
 
 ## CPU optimizations (no external behavior change)
 
