@@ -40,7 +40,7 @@ branch `feat/v2-integration`) and extends the upstream AtomicMarket with:
   (recipients withdraw via `withdraw`) - never pushed as inline transfers
 - **Collection fee at execution time**: settlements apply the collection's fee at execution
   time (read live from AtomicAssets), not the fee stored at listing time, so author fee
-  changes — discounts and raises alike — take effect immediately on all existing listings;
+  changes, discounts and raises alike, take effect immediately on all existing listings;
   the stored `collection_fee` is retained only for indexing/logging
 - **Notification handlers**: `[[eosio::on_notify]]` attributes in the header route
   `atomicassets::transfer`, `atomicassets::lognewoffer`, and wildcard `*::transfer` (token
