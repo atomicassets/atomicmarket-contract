@@ -4,11 +4,11 @@ By default, the collection fee share of every settlement is paid to the collecti
 With a **royalty split config**, the author can instead distribute it across three weighted
 categories:
 
-1. **Founders** — a global recipient list applying to every settlement of the collection
-2. **Templates** — recipient lists keyed by the sold asset's `template_id`
-3. **Attributes** — rules that match an attribute `(field, value)` on the asset
+1. **Founders**, a global recipient list applying to every settlement of the collection
+2. **Templates**, recipient lists keyed by the sold asset's `template_id`
+3. **Attributes**, rules that match an attribute `(field, value)` on the asset
 
-Everything in this system is configured by — and only by — the **collection author**.
+Everything in this system is configured by, and only by, the **collection author**.
 Authorized accounts of the collection are deliberately rejected: this configuration controls
 where funds are paid out, so only the collection's highest authority may change it.
 
@@ -65,7 +65,7 @@ The authorizing author pays the RAM for all rows.
 ## Attribute rules
 
 A rule matches an asset when the asset has an attribute with the rule's exact **field, value
-and value type** — `uint32(5)` and `int32(5)` are different keys, so a rule only matches the
+and value type**, `uint32(5)` and `int32(5)` are different keys, so a rule only matches the
 type the schema actually deserializes to. Float and vector typed values cannot be used as
 match keys.
 
@@ -85,13 +85,13 @@ Attribute data for an asset can come from four serialized blobs:
 
 - **Mode 0 (merged)**: all sources are merged into one attribute map and rules use
   `source = 0`. When a field exists in multiple sources, the precedence is:
-  **asset immutable > asset mutable > template immutable > template mutable** — the same
+  **asset immutable > asset mutable > template immutable > template mutable**, the same
   order as the source ids 1–4 above.
 - **Mode 1 (granular)**: every source keeps its own attribute map and rules target a
   specific source (1–4).
 
 The two modes occupy disjoint lookup keys, so **attribute_mode is locked while rules
-exist** — delete all rules before flipping it.
+exist**, delete all rules before flipping it.
 
 Rule ids are allocated from a persistent counter and are never reused, so action histories
 built from the log actions stay unambiguous.
@@ -103,7 +103,7 @@ At settlement, the collection fee amount (see [collection fee](V2-Changes)) is d
 1. **Per asset**: the amount is divided equally across the listing's assets (V2 listings
    always have exactly one; legacy bundles drain through this path).
 2. **Category renormalization**: for each asset, only categories that actually have payees
-   participate — founders (config non-empty), templates (the asset's template has a
+   participate, founders (config non-empty), templates (the asset's template has a
    recipient list), attributes (at least one rule matched). The split weights are
    renormalized across the participating categories, so no funds are ever stranded.
 3. **Within the attributes category**: the category share is first split across the matched
@@ -115,7 +115,7 @@ At settlement, the collection fee amount (see [collection fee](V2-Changes)) is d
    fee exactly.
 
 All amounts accrue to the internal `balances` table; recipients claim them with `withdraw`.
-**No inline transfers are pushed to recipients** — a recipient contract that asserts in a
+**No inline transfers are pushed to recipients**, a recipient contract that asserts in a
 transfer handler can therefore never block a collection's settlements.
 
 ## Log actions
@@ -131,5 +131,5 @@ amounts credited to balances:
 | `logroydust` | once per settlement, if anything fell through to the author | collection, author, amount |
 
 The four logs of one settlement always sum to exactly the collection fee. The logs notify
-nobody (`require_recipient` is deliberately not used — see above); indexers consume them
+nobody (`require_recipient` is deliberately not used, see above); indexers consume them
 from action traces.
