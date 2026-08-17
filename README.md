@@ -41,3 +41,15 @@ AtomicMarket is a marketplace to sell and auction [AtomicAssets](https://github.
 - **Collection fees**
 
 	Collections can define a market fee between 0 and 15% in the AtomicAssets contract. This fee is respected by the AtomicMarket and paid to the authors of the collection.
+
+## Releases
+
+Tagged versions are published as GitHub Releases with the `atomicmarket.wasm`,
+`atomicmarket.abi` and `SHA256SUMS` assets attached.
+[RELEASING.md](RELEASING.md) covers how a release is cut and what its notes
+carry, and [CHANGELOG.md](CHANGELOG.md) holds the notes for each version.
+
+## Credits
+
+AtomicMarket is the work of many contributors, recorded in
+[AUTHORS.md](AUTHORS.md).
