@@ -13,5 +13,8 @@ cd /tmp/market-wiki
 git add -A && git commit -m "Sync wiki from docs/wiki" && git push
 ```
 
-Page links between the files use wiki-style page names (e.g. `[Royalty Splits](Royalty-Splits)`), which
-resolve on the GitHub wiki. When viewing these files inside the repo, append `.md` mentally.
+The copy step never deletes: when a page is removed from docs/wiki, `git rm` it in the wiki
+clone during the same sync, or the wiki keeps serving the removed page.
+
+Page links between the files use wiki-style page names (e.g. `[Home](Home)`), which resolve
+on the GitHub wiki. When viewing these files inside the repo, append `.md` mentally.
